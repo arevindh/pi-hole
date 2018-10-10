@@ -387,8 +387,13 @@ SetWebUILayout() {
 
 
 ClearSpeedtestData(){
-    mv $speedtestdb $speedtestdb"_old"
-    cp /var/www/html/admin/scripts/pi-hole/speedtest/speedtest.db $speedtestdb
+    if [[ "${#SPEEDTEST_DB}" -gt 0 ]]; then
+        mv ${SPEEDTEST_DB} ${SPEEDTEST_DB}"_old"
+        cp /var/www/html/admin/scripts/pi-hole/speedtest/speedtest.db ${SPEEDTEST_DB}
+    else
+        mv $speedtestdb $speedtestdb"_old"
+        cp /var/www/html/admin/scripts/pi-hole/speedtest/speedtest.db $speedtestdb
+    fi
 }
 
 ChageSpeedTestSchedule(){
@@ -415,11 +420,15 @@ SpeedtestServer(){
 RunSpeedtestNow(){
   mkdir -p /tmp/speedtest
   lockfile="/tmp/speedtest/lock"
-  if [ -f $speedtestdb ]
+  db_location=$speedtestdb
+  if [[ "${#SPEEDTEST_DB}" -gt 0 ]]; then
+      db_location=${SPEEDTEST_DB}
+  fi
+  if [ -f $db_location ]
   then
       echo ""
   else
-      cp /var/www/html/admin/scripts/pi-hole/speedtest/speedtest.db $speedtestdb
+      cp /var/www/html/admin/scripts/pi-hole/speedtest/speedtest.db $db_location
       sleep 2
   fi
   if [ -f "$lockfile" ]
