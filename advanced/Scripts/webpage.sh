@@ -387,13 +387,12 @@ SetWebUILayout() {
 
 
 ClearSpeedtestData(){
+    db_location=/etc/pihole/speedtest.db
     if [[ "${#SPEEDTEST_DB}" -gt 0 ]]; then
-        mv ${SPEEDTEST_DB} ${SPEEDTEST_DB}"_old"
-        cp /var/www/html/admin/scripts/pi-hole/speedtest/speedtest.db ${SPEEDTEST_DB}
-    else
-        mv $speedtestdb $speedtestdb"_old"
-        cp /var/www/html/admin/scripts/pi-hole/speedtest/speedtest.db $speedtestdb
+        db_location=${SPEEDTEST_DB}
     fi
+    mv $db_location $db_location"_old"
+    cp /var/www/html/admin/scripts/pi-hole/speedtest/speedtest.db $db_location
 }
 
 ChageSpeedTestSchedule(){
