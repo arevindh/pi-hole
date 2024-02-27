@@ -1,9 +1,11 @@
 #!/bin/bash
 admin_dir=/var/www/html
-curr_wp=/opt/pihole/webpage.sh
+opt_dir=/opt/pihole
+etc_dir=/etc/pihole
+curr_wp=$opt_dir/webpage.sh
 last_wp=$curr_wp.old
 org_wp=$curr_wp.org
-curr_db=/etc/pihole/speedtest.db
+curr_db=$etc_dir/speedtest.db
 last_db=$curr_db.old
 db_table="speedtest"
 
@@ -13,7 +15,7 @@ help() {
     echo "up - update Pi-hole (along with the Mod)"
     echo "un - remove the mod (including all backups)"
     echo "db - flush database (restore for a short while after)"
-    echo "If no option is specified, the Mod will be (re)installed."
+    echo "If no option is specified, the latest version of the Mod will be (re)installed."
 }
 
 setTags() {
@@ -71,7 +73,11 @@ download() {
         setTags "$dest" "${src:-}" "$branch"
         git reset --hard origin/"$branch"
         git checkout -B "$branch"
-        git branch -u origin/"$branch"
+        if git rev-parse --verify "$branch" >/dev/null 2>&1; then
+            git branch -u "origin/$branch" "$branch"
+        else
+            git checkout --track "origin/$branch"
+        fi
     fi
 
     if [ "$(git rev-parse HEAD)" != "$(git rev-parse $latestTag)" ]; then
@@ -95,22 +101,22 @@ manageHistory() {
         if [ -f $curr_db ] && ! isEmpty $curr_db; then
             echo "Flushing Database..."
             mv -f $curr_db $last_db
-            if [ -f /etc/pihole/last_speedtest ]; then
-                mv -f /etc/pihole/last_speedtest /etc/pihole/last_speedtest.old
+            if [ -f $etc_dir/last_speedtest ]; then
+                mv -f $etc_dir/last_speedtest $etc_dir/last_speedtest.old
             fi
             if [ -f /var/log/pihole/speedtest.log ]; then
                 mv -f /var/log/pihole/speedtest.log /var/log/pihole/speedtest.log.old
-                rm -f /etc/pihole/speedtest.log
+                rm -f $etc_dir/speedtest.log
             fi
         elif [ -f $last_db ]; then
             echo "Restoring Database..."
             mv -f $last_db $curr_db
-            if [ -f /etc/pihole/last_speedtest.old ]; then
-                mv -f /etc/pihole/last_speedtest.old /etc/pihole/last_speedtest
+            if [ -f $etc_dir/last_speedtest.old ]; then
+                mv -f $etc_dir/last_speedtest.old $etc_dir/last_speedtest
             fi
             if [ -f /var/log/pihole/speedtest.log.old ]; then
                 mv -f /var/log/pihole/speedtest.log.old /var/log/pihole/speedtest.log
-                cp -af /var/log/pihole/speedtest.log /etc/pihole/speedtest.log
+                cp -af /var/log/pihole/speedtest.log $etc_dir/speedtest.log
             fi
         fi
     fi
@@ -155,39 +161,7 @@ install() {
         $PKG_MANAGER install -y "${missingPkgs[@]}"
     fi
 
-    if notInstalled speedtest && notInstalled speedtest-cli; then
-        if [[ "$PKG_MANAGER" == *"yum"* || "$PKG_MANAGER" == *"dnf"* ]]; then
-            if [ ! -f /etc/yum.repos.d/ookla_speedtest-cli.repo ]; then
-                echo "Adding speedtest source for RPM..."
-                curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.rpm.sh | sudo bash
-            fi
-        elif [[ "$PKG_MANAGER" == *"apt-get"* ]]; then
-            if [ ! -f /etc/apt/sources.list.d/ookla_speedtest-cli.list ]; then
-                echo "Adding speedtest source for DEB..."
-                if [ -e /etc/os-release ]; then
-                    . /etc/os-release
-                    local base="ubuntu debian"
-                    local os=${ID}
-                    local dist=${VERSION_CODENAME}
-                    if [ ! -z "${ID_LIKE-}" ] && [[ "${base//\"/}" =~ "${ID_LIKE//\"/}" ]] && [ "${os}" != "ubuntu" ]; then
-                        os=${ID_LIKE%% *}
-                        [ -z "${UBUNTU_CODENAME-}" ] && UBUNTU_CODENAME=$(/usr/bin/lsb_release -cs)
-                        dist=${UBUNTU_CODENAME}
-                        [ -z "$dist" ] && dist=${VERSION_CODENAME}
-                    fi
-                    wget -O /tmp/script.deb.sh https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh >/dev/null 2>&1
-                    chmod +x /tmp/script.deb.sh
-                    os=$os dist=$dist /tmp/script.deb.sh
-                    rm -f /tmp/script.deb.sh
-                else
-                    curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
-                fi
-            fi
-        fi
-        $PKG_MANAGER install -y speedtest
-    fi
-
-    download /opt mod_pihole https://github.com/arevindh/pi-hole
+    download $etc_dir mod https://github.com/arevindh/pi-hole
     download $admin_dir admin https://github.com/arevindh/AdminLTE web
     if [ -f $curr_wp ]; then
         if ! cat $curr_wp | grep -q SpeedTest; then
@@ -197,8 +171,8 @@ install() {
             cp -af $curr_wp $last_wp
         fi
     fi
-    cp -af /opt/mod_pihole/advanced/Scripts/webpage.sh $curr_wp
-    cp -af /opt/mod_pihole/advanced/Scripts/speedtestmod/. /opt/pihole/speedtestmod/
+    cp -af $etc_dir/mod/advanced/Scripts/webpage.sh $curr_wp
+    cp -af $etc_dir/mod/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
     chmod +x $curr_wp
     pihole updatechecker local
     pihole -a -s
@@ -225,6 +199,7 @@ uninstall() {
         cp -af $org_wp $curr_wp
         chmod +x $curr_wp
         rm -rf /opt/mod_pihole
+        rm -rf $etc_dir/mod
         pihole updatechecker
     fi
 
@@ -232,8 +207,8 @@ uninstall() {
 }
 
 purge() {
-    rm -rf "$admin_dir"*_admin
-    rm -rf /opt/pihole/speedtestmod
+    rm -rf "$admin_dir"/*_admin
+    rm -rf $opt_dir/speedtestmod
     if [ -f /etc/systemd/system/pihole-speedtest.timer ]; then
         rm -f /etc/systemd/system/pihole-speedtest.service
         rm -f /etc/systemd/system/pihole-speedtest.timer
@@ -243,7 +218,7 @@ purge() {
     rm -f "$curr_wp".*
     rm -f "$curr_db".*
     rm -f "$curr_db"_*
-    rm -f /etc/pihole/last_speedtest.*
+    rm -f $etc_dir/last_speedtest.*
     if isEmpty $curr_db; then
         rm -f $curr_db
     fi
@@ -306,10 +281,10 @@ main() {
         sudo "$0" "$@"
         exit $?
     fi
-    aborted=0
     set -Eeuo pipefail
     trap '[ "$?" -eq "0" ] && commit || abort' EXIT
     trap 'abort' INT TERM
+    shopt -s dotglob
 
     local db=$([ "$op" == "up" ] && echo "${3:-}" || [ "$op" == "un" ] && echo "${2:-}" || echo "$op")
     case $op in
@@ -333,6 +308,7 @@ main() {
     exit 0
 }
 
+aborted=0
 rm -f /tmp/pimod.log
 touch /tmp/pimod.log
 main "$@" 2>&1 | tee -a /tmp/pimod.log
