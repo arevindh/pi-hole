@@ -301,6 +301,7 @@ main() {
         install
         ;;
     *)
+        uninstall
         install
         manageHistory $db
         ;;
