@@ -54,6 +54,7 @@ savetest() {
     local json_file="/tmp/speedtest_results"
     jq "$rm_empty" "$json_file" > "$temp_file" && mv -f "$temp_file" "$json_file"
     rm -f "$temp_file"
+    chmod 644 /tmp/speedtest_results
     mv -f /tmp/speedtest_results /var/log/pihole/speedtest.log
     cp -af /var/log/pihole/speedtest.log /etc/pihole/speedtest.log
     rm -f "$out"
