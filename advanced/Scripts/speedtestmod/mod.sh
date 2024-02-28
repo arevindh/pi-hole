@@ -259,7 +259,7 @@ abort() {
 
     pihole restartdns
     aborted=1
-    printf "Please try again or try manually.\n\n$(date)\n"
+    printf "Please try again before reporting an issue.\n\n$(date)\n"
 }
 
 commit() {
