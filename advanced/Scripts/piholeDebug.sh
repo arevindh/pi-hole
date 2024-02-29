@@ -72,6 +72,7 @@ HTML_DIRECTORY="/var/www/html"
 WEB_GIT_DIRECTORY="${HTML_DIRECTORY}/admin"
 SHM_DIRECTORY="/dev/shm"
 ETC="/etc"
+SPEEDTEST_GIT_DIRECTORY="/etc/pihole/speedtest"
 
 # Files required by Pi-hole
 # https://discourse.pi-hole.net/t/what-files-does-pi-hole-use/1684
@@ -345,6 +346,8 @@ check_component_versions() {
     compare_local_version_to_git_version "${CORE_GIT_DIRECTORY}" "Core"
     # Check the Web version, branch, and commit
     compare_local_version_to_git_version "${WEB_GIT_DIRECTORY}" "Web"
+    # Check the Speedtest version, branch, and commit
+    compare_local_version_to_git_version "${SPEEDTEST_GIT_DIRECTORY}" "Speedtest"
     # Check the FTL version
     check_ftl_version
 }

@@ -26,12 +26,12 @@ function get_local_hash() {
 }
 
 function get_remote_version() {
-    curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1
+    curl -s "https://api.github.com/repos/arevindh/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || { curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1; }
 }
 
 
 function get_remote_hash(){
-    git ls-remote "https://github.com/pi-hole/${1}" --tags "${2}" | awk '{print substr($0, 0,8);}' || return 1
+    git ls-remote "https://github.com/arevindh/${1}" --tags "${2}" | awk '{print substr($0, 0,8);}' || { git ls-remote "https://github.com/pi-hole/${1}" --tags "${2}" | awk '{print substr($0, 0,8);}' || return 1; }
 }
 
 # Source the setupvars config file
@@ -131,3 +131,21 @@ if [[ "${DOCKER_TAG}" ]]; then
     GITHUB_DOCKER_VERSION="$(get_remote_version docker-pi-hole)"
     addOrEditKeyValPair "${VERSION_FILE}" "GITHUB_DOCKER_VERSION" "${GITHUB_DOCKER_VERSION}"
 fi
+
+
+# get Speedtest versions
+
+SPEEDTEST_VERSION="$(get_local_version /etc/pihole/speedtest)"
+addOrEditKeyValPair "${VERSION_FILE}" "SPEEDTEST_VERSION" "${SPEEDTEST_VERSION}"
+
+SPEEDTEST_BRANCH="$(get_local_branch /etc/pihole/speedtest)"
+addOrEditKeyValPair "${VERSION_FILE}" "SPEEDTEST_BRANCH" "${SPEEDTEST_BRANCH}"
+
+SPEEDTEST_HASH="$(get_local_hash /etc/pihole/speedtest)"
+addOrEditKeyValPair "${VERSION_FILE}" "SPEEDTEST_HASH" "${SPEEDTEST_HASH}"
+
+GITHUB_SPEEDTEST_VERSION="$(get_remote_version pihole-speedtest)"
+addOrEditKeyValPair "${VERSION_FILE}" "GITHUB_SPEEDTEST_VERSION" "${GITHUB_SPEEDTEST_VERSION}"
+
+GITHUB_SPEEDTEST_HASH="$(get_remote_hash pihole-speedtest "${SPEEDTEST_BRANCH}")"
+addOrEditKeyValPair "${VERSION_FILE}" "GITHUB_SPEEDTEST_HASH" "${GITHUB_SPEEDTEST_HASH}"
