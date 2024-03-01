@@ -137,7 +137,7 @@ download() {
         cd "$path"
         rm -rf "$name"
         git clone --depth=1 -b "$branch" "$url" "$name"
-        git config --global --add safe.directory "$path"/"$name"
+        git config --global --add safe.directory "$dest"
         setTags "$name" "${src:-}" "$branch"
         if [ ! -z "$src" ]; then
             if [[ "$localTag" == *.* ]] && [[ "$localTag" < "$latestTag" ]]; then
