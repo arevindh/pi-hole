@@ -1,10 +1,9 @@
 #!/bin/bash
 admin_dir=/var/www/html
+core_dir=/etc/.pihole
 opt_dir=/opt/pihole
 etc_dir=/etc/pihole
 curr_wp=$opt_dir/webpage.sh
-last_wp=$curr_wp.old
-org_wp=$curr_wp.org
 curr_db=$etc_dir/speedtest.db
 last_db=$curr_db.old
 db_table="speedtest"
@@ -62,6 +61,7 @@ download() {
         cd "$dest"
         if [ ! -z "$src" ]; then
             if [ "$url" != "old" ]; then
+                git remote -v | grep -q "old" || git remote rename origin old
                 git remote -v | grep -q "old" || git remote rename origin old
                 git remote -v | grep -q "origin" && git remote remove origin
                 git remote add -t "$branch" origin "$url"
@@ -136,7 +136,7 @@ notInstalled() {
     return 1
 }
 
-install() {
+installMod() {
     echo "Installing Mod..."
 
     if [ ! -f /usr/local/bin/pihole ]; then
@@ -162,47 +162,29 @@ install() {
         $PKG_MANAGER install -y "${missingPkgs[@]}"
     fi
 
+    download /etc .pihole https://github.com/arevindh/pi-hole Pi-hole
+    SKIP_INSTALL=true
+    source "$core_dir/automated install/basic-install.sh"
+    installScripts
+    cp -af $core_dir/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
+
     download $etc_dir speedtest https://github.com/arevindh/pihole-speedtest
-    download $etc_dir mod https://github.com/arevindh/pi-hole
     download $admin_dir admin https://github.com/arevindh/AdminLTE web
-    if [ -f $curr_wp ]; then
-        if ! cat $curr_wp | grep -q SpeedTest; then
-            cp -af $curr_wp $org_wp
-        fi
-        if [ ! -f $last_wp ]; then
-            cp -af $curr_wp $last_wp
-        fi
-    fi
-    cp -af $etc_dir/mod/advanced/Scripts/webpage.sh $curr_wp
-    cp -af $etc_dir/mod/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
-    chmod +x $curr_wp
-    pihole updatechecker local
     pihole -a -s
+    pihole updatechecker
 }
 
 uninstall() {
     if [ -f $curr_wp ] && cat $curr_wp | grep -q SpeedTest; then
         echo "Restoring Pi-hole..."
 
-        if [ ! -f $org_wp ]; then
-            if [ ! -d /opt/org_pihole ]; then
-                download /opt org_pihole https://github.com/pi-hole/pi-hole Pi-hole
-            fi
-            cd /opt
-            cp -af org_pihole/advanced/Scripts/webpage.sh $org_wp
-            rm -rf org_pihole
-        fi
-
         pihole -a -s -1
+        download /etc .pihole https://github.com/pi-hole/pi-hole Pi-hole
         download $admin_dir admin https://github.com/pi-hole/AdminLTE web
-        if [ ! -f $last_wp ]; then
-            cp -af $curr_wp $last_wp
-        fi
-        cp -af $org_wp $curr_wp
-        chmod +x $curr_wp
-        rm -rf /opt/mod_pihole
-        rm -rf $etc_dir/mod
-        pihole updatechecker
+
+        SKIP_INSTALL=true
+        source "$core_dir/automated install/basic-install.sh"
+        installScripts
     fi
 
     manageHistory ${1:-}
@@ -246,19 +228,19 @@ update() {
 abort() {
     echo "Process Aborting..."
 
-    if [ -f $last_wp ]; then
-        cp -af $last_wp $curr_wp
-        chmod +x $curr_wp
-        rm -f $last_wp
+    if [ -d $admin_dir/admin/.git/refs/remotes/old ]; then
+        download $admin_dir admin old web
     fi
-    if [ -f $last_db ] && [ ! -f $curr_db ]; then
-        mv $last_db $curr_db
+    if [ -d $core_dir/.git/refs/remotes/old ]; then
+        download /etc .pihole old Pi-hole
+        source "$core_dir/automated install/basic-install.sh"
+        installScripts
     fi
     if [ ! -f $curr_wp ] || ! cat $curr_wp | grep -q SpeedTest; then
         purge
     fi
-    if [ -d $admin_dir/admin/.git/refs/remotes/old ]; then
-        download $admin_dir admin old web
+    if [ -f $last_db ] && [ ! -f $curr_db ]; then
+        mv $last_db $curr_db
     fi
 
     pihole restartdns
@@ -267,9 +249,10 @@ abort() {
 }
 
 commit() {
+    cd $core_dir
+    git remote -v | grep -q "old" && git remote remove old
     cd $admin_dir/admin
     git remote -v | grep -q "old" && git remote remove old
-    rm -f $last_wp
     pihole restartdns
     printf "Done!\n\n$(date)\n"
 }
@@ -285,7 +268,7 @@ main() {
         sudo "$0" "$@"
         exit $?
     fi
-    set -Eeuo pipefail
+    set -Eeo pipefail
     trap '[ "$?" -eq "0" ] && commit || abort' EXIT
     trap 'abort' INT TERM
     shopt -s dotglob
@@ -302,12 +285,11 @@ main() {
     up)
         uninstall $db
         update ${2:-}
-        install
+        installMod
         ;;
     *)
-        uninstall
-        install
-        manageHistory $db
+        uninstall $db
+        installMod
         ;;
     esac
     exit 0

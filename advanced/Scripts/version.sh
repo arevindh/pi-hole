@@ -30,7 +30,7 @@ getLocalVersion() {
         "Pi-hole"   )  echo "${CORE_VERSION:=N/A}";;
         "web"  )  [ "${INSTALL_WEB_INTERFACE}" = true ] && echo "${WEB_VERSION:=N/A}";;
         "FTL"       )  echo "${FTL_VERSION:=N/A}";;
-        "speedtest" )  echo "${SPEEDTEST_VERSION:=N/A}";;
+        "Speedtest" )  echo "${SPEEDTEST_VERSION:=N/A}";;
     esac
 }
 
@@ -39,7 +39,7 @@ getLocalHash() {
         "Pi-hole"   )  echo "${CORE_HASH:=N/A}";;
         "web"  )  [ "${INSTALL_WEB_INTERFACE}" = true ] && echo "${WEB_HASH:=N/A}";;
         "FTL"       )  echo "${FTL_HASH:=N/A}";;
-        "speedtest" )  echo "${SPEEDTEST_HASH:=N/A}";;
+        "Speedtest" )  echo "${SPEEDTEST_HASH:=N/A}";;
     esac
 }
 
@@ -48,7 +48,7 @@ getRemoteHash(){
         "Pi-hole"   )  echo "${GITHUB_CORE_HASH:=N/A}";;
         "web"  )  [ "${INSTALL_WEB_INTERFACE}" = true ] && echo "${GITHUB_WEB_HASH:=N/A}";;
         "FTL"       )  echo "${GITHUB_FTL_HASH:=N/A}";;
-        "speedtest" )  echo "${GITHUB_SPEEDTEST_HASH:=N/A}";;
+        "Speedtest" )  echo "${GITHUB_SPEEDTEST_HASH:=N/A}";;
     esac
 }
 
@@ -57,7 +57,7 @@ getRemoteVersion(){
         "Pi-hole"   )  echo "${GITHUB_CORE_VERSION:=N/A}";;
         "web"  )  [ "${INSTALL_WEB_INTERFACE}" = true ] && echo "${GITHUB_WEB_VERSION:=N/A}";;
         "FTL"       )  echo "${GITHUB_FTL_VERSION:=N/A}";;
-        "speedtest" )  echo "${GITHUB_SPEEDTEST_VERSION:=N/A}";;
+        "Speedtest" )  echo "${GITHUB_SPEEDTEST_VERSION:=N/A}";;
     esac
 }
 
@@ -66,6 +66,7 @@ getLocalBranch(){
         "Pi-hole"   )  echo "${CORE_BRANCH:=N/A}";;
         "web"  )  [ "${INSTALL_WEB_INTERFACE}" = true ] && echo "${WEB_BRANCH:=N/A}";;
         "FTL"       )  echo "${FTL_BRANCH:=N/A}";;
+        "Speedtest" )  echo "${SPEEDTEST_BRANCH:=N/A}";;
     esac
 }
 
@@ -125,6 +126,7 @@ defaultOutput() {
     fi
 
     versionOutput "FTL" "$@"
+    versionOutput "Speedtest" "$@"
 }
 
 helpFunc() {
@@ -150,7 +152,7 @@ case "${1}" in
     "-p" | "--pihole"    ) shift; versionOutput "Pi-hole" "$@";;
     "-a" | "--admin"     ) shift; versionOutput "web" "$@";;
     "-f" | "--ftl"       ) shift; versionOutput "FTL" "$@";;
-    "-s" | "--speedtest" ) shift; versionOutput "speedtest" "$@";;
+    "-s" | "--speedtest" ) shift; versionOutput "Speedtest" "$@";;
     "-h" | "--help"      ) helpFunc;;
     *                    ) defaultOutput "$@";;
 esac
