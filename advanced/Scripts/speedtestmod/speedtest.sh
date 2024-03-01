@@ -151,7 +151,6 @@ download() {
         if [ ! -z "$src" ]; then
             if [ "$url" != "old" ]; then
                 git remote -v | grep -q "old" || git remote rename origin old
-                git remote -v | grep -q "old" || git remote rename origin old
                 git remote -v | grep -q "origin" && git remote remove origin
                 git remote add -t "$branch" origin "$url"
             elif [ -d .git/refs/remotes/old ]; then
