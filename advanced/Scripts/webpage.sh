@@ -620,6 +620,80 @@ interval_seconds=$total_seconds
 
 schedule=\$(grep "SPEEDTESTSCHEDULE" "$setupVars" | cut -f2 -d"=")
 
+setTags() {
+    local path=\${1:-}
+    local name=\${2:-}
+    local branch="\${3:-master}"
+
+    if [ ! -z "\$path" ]; then
+        cd "\$path"
+        git fetch origin \$branch:refs/remotes/origin/\$branch -q
+        git fetch --tags -f -q
+        latestTag=\$(git describe --tags \$(git rev-list --tags --max-count=1))
+    fi
+    if [ ! -z "\$name" ]; then
+        localTag=\$(pihole -v | grep "\$name" | cut -d ' ' -f 6)
+        if [ "\$localTag" == "HEAD" ]; then
+            localTag=\$(pihole -v | grep "\$name" | cut -d ' ' -f 7)
+        fi
+    fi
+}
+
+download() {
+    local path=\$1
+    local name=\$2
+    local url=\$3
+    local src=\${4:-}
+    local branch="\${5:-master}"
+    local dest=\$path/\$name
+
+    if [ ! -d "\$dest" ]; then # replicate
+        cd "\$path"
+        rm -rf "\$name"
+        git clone --depth=1 -b "\$branch" "\$url" "\$name"
+        git config --global --add safe.directory "\$path"/"\$name"
+        setTags "\$name" "\${src:-}" "\$branch"
+        if [ ! -z "\$src" ]; then
+            if [[ "\$localTag" == *.* ]] && [[ "\$localTag" < "\$latestTag" ]]; then
+                latestTag=\$localTag
+                git fetch --unshallow
+            fi
+        fi
+    else # replace
+        git config --global --add safe.directory "\$dest"
+        cd "\$dest"
+        if [ ! -z "\$src" ]; then
+            if [ "\$url" != "old" ]; then
+                git remote -v | grep -q "old" || git remote rename origin old
+                git remote -v | grep -q "old" || git remote rename origin old
+                git remote -v | grep -q "origin" && git remote remove origin
+                git remote add -t "\$branch" origin "\$url"
+            elif [ -d .git/refs/remotes/old ]; then
+                git remote remove origin
+                git remote rename old origin
+                git clean -ffdx
+            fi
+        fi
+        setTags "\$dest" "\${src:-}" "\$branch"
+        git reset --hard origin/"\$branch"
+        git checkout -B "\$branch"
+        if git rev-parse --verify "\$branch" >/dev/null 2>&1; then
+            git branch -u "origin/\$branch" "\$branch"
+        else
+            git checkout --track "origin/\$branch"
+        fi
+    fi
+
+    if [ "$(git rev-parse HEAD)" != "$(git rev-parse \$latestTag)" ]; then
+        git -c advice.detachedHead=false checkout "\$latestTag"
+    fi
+    cd ..
+}
+
+if [ ! -d /etc/pihole/speedtest ]; then
+    download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
+fi
+
 # if schedule is set and interval is "nan", set the speedtest interval to the schedule
 if [[ "\$interval_seconds" == "nan" ]]; then
     if [[ "\${schedule-}" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; then
