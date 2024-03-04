@@ -7,6 +7,7 @@ curr_wp=$opt_dir/webpage.sh
 curr_db=$etc_dir/speedtest.db
 last_db=$curr_db.old
 db_table="speedtest"
+SKIP_INSTALL=true
 
 help() {
     echo "(Re)install Latest Speedtest Mod."
@@ -56,6 +57,9 @@ download() {
                 git fetch --unshallow
             fi
         fi
+    elif [ ! -d "$dest/.git" ]; then
+        mv -f "$dest" "$dest.old"
+        download "$@"
     else # replace
         git config --global --add safe.directory "$dest"
         cd "$dest"
@@ -80,8 +84,15 @@ download() {
         fi
     fi
 
-    if [ "$(git rev-parse HEAD)" != "$(git rev-parse $latestTag)" ]; then
-        git -c advice.detachedHead=false checkout "$latestTag"
+    # Checkout the last tag before/at HEAD or latest tag if the branch is master
+    if [ "$branch" == "master" ]; then
+        if ! last_tag_before_head=$(git describe --tags --abbrev=0 HEAD 2>/dev/null); then
+            last_tag_before_head=$latestTag
+        fi
+
+        if [ "$(git rev-parse HEAD)" != "$(git rev-parse $last_tag_before_head 2>/dev/null)" ]; then
+            git -c advice.detachedHead=false checkout "$last_tag_before_head"
+        fi
     fi
     cd ..
 }
@@ -162,13 +173,12 @@ installMod() {
     fi
 
     download /etc .pihole https://github.com/arevindh/pi-hole Pi-hole
-    SKIP_INSTALL=true
+    download $etc_dir speedtest https://github.com/arevindh/pihole-speedtest
+    download $admin_dir admin https://github.com/arevindh/AdminLTE web
+
     source "$core_dir/automated install/basic-install.sh"
     installScripts
     cp -af $core_dir/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
-
-    download $etc_dir speedtest https://github.com/arevindh/pihole-speedtest
-    download $admin_dir admin https://github.com/arevindh/AdminLTE web
     pihole -a -s
     pihole updatechecker
 }
@@ -178,13 +188,8 @@ uninstall() {
         echo "Restoring Pi-hole..."
 
         pihole -a -s -1
-        if [ ! -d $core_dir/.git ]; then
-            mv -f $core_dir $core_dir.old
-        fi
         download /etc .pihole https://github.com/pi-hole/pi-hole Pi-hole
         download $admin_dir admin https://github.com/pi-hole/AdminLTE web
-
-        SKIP_INSTALL=true
         source "$core_dir/automated install/basic-install.sh"
         installScripts
     fi
