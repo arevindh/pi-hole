@@ -17,39 +17,6 @@ help() {
     echo "If no option is specified, the latest version of the Mod will be (re)installed."
 }
 
-setTags() {
-    local path=${1:-}
-    local name=${2:-}
-    local url=${3:-}
-    local branch="${4:-master}"
-
-    if [ ! -z "$path" ]; then
-        cd "$path"
-        git fetch origin $branch:refs/remotes/origin/$branch -q
-        if [[ "$url" != *"arevindh"* ]]; then
-            git tag -l | xargs git tag -d >/dev/null 2>&1
-        fi
-        git fetch --tags -f -q
-        latestTag=$(git ls-remote --tags "$url" | awk -F/ '{print $3}' | grep -v '\^{}' | sort -V | tail -n1)
-    fi
-
-    if [[ "$url" != *"arevindh"* ]] && [ ! -z "$name" ]; then
-        local localTag=$(pihole -v | grep "$name" | cut -d ' ' -f 6)
-
-        if [ "$localTag" == "HEAD" ]; then
-            localTag=$(pihole -v | grep "$name" | cut -d ' ' -f 7)
-        fi
-
-        if [[ "$localTag" == *.* ]] && [[ "$localTag" < "$latestTag" ]]; then
-            latestTag=$localTag
-
-            if [ -f "$(git rev-parse --git-dir)"/shallow ]; then
-                git fetch --unshallow
-            fi
-        fi
-    fi
-}
-
 download() {
     local path=$1
     local name=$2
@@ -58,62 +25,52 @@ download() {
     local branch="${5:-master}"
     local dest=$path/$name
 
-    if [ ! -d "$dest" ]; then # replicate
-        cd "$path"
-        rm -rf "$name"
-        git clone --depth=1 -b "$branch" "$url" "$name"
-        git config --global --add safe.directory "$dest"
-        setTags "$name" "$src" "$url" "$branch"
+    if [ ! -d "$dest" ]; then
+        git clone --depth=1 -b "$branch" "$url" "$dest"
     elif [ ! -d "$dest/.git" ]; then
         mv -f "$dest" "$dest.old"
         download "$@"
-    else # replace
-        git config --global --add safe.directory "$dest"
-        cd "$dest"
+        return
+    fi
 
-        if [ ! -z "$src" ]; then
-            if [ "$url" != "old" ]; then
-                git remote -v | grep -q "old" || git remote rename origin old
-                git remote -v | grep -q "origin" && git remote remove origin
-                git remote add -t "$branch" origin "$url"
-            elif [ -d .git/refs/remotes/old ]; then
-                git remote remove origin
-                git remote rename old origin
-                git clean -ffdx
-            fi
-        fi
+    cd "$dest"
+    git config --global --add safe.directory "$dest"
 
-        setTags "$dest" "$src" "$url" "$branch"
-        git reset --hard origin/"$branch"
-        git checkout -B "$branch"
+    if [ "$url" != "old" ]; then
+        git remote -v | grep -q "old" || git remote rename origin old
+        git remote -v | grep -q "origin" && git remote remove origin
+        git remote add -t "$branch" origin "$url"
+    elif [ -d .git/refs/remotes/old ]; then
+        git remote remove origin
+        git remote rename old origin
+        git clean -ffdx
+    fi
 
-        if git rev-parse --verify "$branch" >/dev/null 2>&1; then
-            git branch -u "origin/$branch" "$branch"
-        else
-            git checkout --track "origin/$branch"
+    git fetch origin $branch:refs/remotes/origin/$branch -q
+    git reset --hard origin/"$branch"
+    git checkout -B "$branch"
+    git rev-parse --verify "$branch" >/dev/null 2>&1 && git branch -u "origin/$branch" "$branch" || git checkout --track "origin/$branch"
+    git tag -l | xargs git tag -d >/dev/null 2>&1
+    git fetch --tags -f -q
+    [ "$url" == "old" ] || latestTag=$(git ls-remote --tags "$url" | awk -F/ '{print $3}' | grep -v '\^{}' | sort -V | tail -n1)
+    [[ "${latestTag:-}" == *.* ]] || latestTag=$(git describe --tags $(git rev-list --tags --max-count=1))
+
+    if [[ "$url" != *"arevindh"* ]] && [ ! -z "$src" ] && [[ "$url" != *"ipitio"* ]] && ! git remote -v | grep -q "old.*ipitio"; then
+        local localVersion=$(pihole -v | grep "$src" | cut -d ' ' -f 6)
+        [ "$localVersion" != "HEAD" ] || localVersion=$(pihole -v | grep "$src" | cut -d ' ' -f 7)
+
+        # if the local version is less than the latest tag then use the tag before it
+        if [[ "$localVersion" == *.* ]] && [[ "$localVersion" < "$latestTag" ]]; then
+            [ "$url" == "old" ] || latestTag=$(git ls-remote --tags "$url" | awk -F/ '{print $3}' | grep -v '\^{}' | sort -V | awk -v lv="$localVersion" '$1 < lv {print $1}' | tail -n1)
+            [[ "$latestTag" == *.* ]] || latestTag=$(git tag -l | grep -v '\^{}' | sort -V | awk -v lv="$localVersion" '$1 < lv {print $1}' | tail -n1)
+            [ ! -f "$(git rev-parse --git-dir)"/shallow ] || git fetch --unshallow
         fi
     fi
 
-    if [ "$branch" == "master" ] && [[ "$url" != *"ipitio"* ]]; then
-        if [[ "$url" == *"arevindh"* ]]; then
-            if ! last_tag_before_current=$(git describe --tags --abbrev=0 HEAD 2>/dev/null); then
-                last_tag_before_current=$latestTag
-            fi
-        else
-            # Get last tag before/at $latestTag installed
-            last_tag_before_current=$(git tag -l | grep '^v' | grep -v 'vDev' | sort -V | awk -v latestTag="$latestTag" '$1 <= latestTag' | tail -n1)
-
-            # If no such tag is found, fall back to $latestTag
-            if [ -z "$last_tag_before_current" ]; then
-                last_tag_before_current=$latestTag
-            fi
-        fi
-
-        # Check if HEAD is already at this tag, if not, check out the tag
-        if [ "$(git rev-parse HEAD)" != "$(git rev-parse $last_tag_before_current 2>/dev/null)" ]; then
-            git -c advice.detachedHead=false checkout "$last_tag_before_current"
-        fi
+    if [ "$branch" == "master" ] && [[ "$url" != *"ipitio"* ]] && [ "$(git rev-parse HEAD)" != "$(git rev-parse $latestTag 2>/dev/null)" ]; then
+        git -c advice.detachedHead=false checkout "$latestTag"
     fi
+
     cd ..
 }
 
