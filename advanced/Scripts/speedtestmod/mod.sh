@@ -30,7 +30,7 @@ setTags() {
             git tag -l | xargs git tag -d >/dev/null 2>&1
         fi
         git fetch --tags -f -q
-        latestTag=$(git describe --tags $(git rev-list --tags --max-count=1))
+        latestTag=$(git ls-remote --tags "$url" | awk -F/ '{print $3}' | grep -v '\^{}' | sort -V | tail -n1)
     fi
 
     if [[ "$url" != *"arevindh"* ]] && [ ! -z "$name" ]; then
