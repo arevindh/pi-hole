@@ -625,10 +625,11 @@ source /opt/pihole/speedtestmod/mod.sh
 
 # if schedule is set and interval is "nan", get latest release and set the speedtest interval to the schedule
 if [[ "\$interval_seconds" == "nan" ]]; then
-    download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
     if [[ "\${schedule-}" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; then
         /usr/local/bin/pihole -a -s "\$schedule"
     fi
+    download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
+    pihole updatechecker
     exit 0
 fi
 

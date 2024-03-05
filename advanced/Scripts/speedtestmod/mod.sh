@@ -16,7 +16,7 @@ help() {
     echo "db - flush the database (if it's not empty, otherwise restore it)"
     echo "If no option is specified, the latest version of the Mod will be (re)installed."
 }
-pi
+
 setTags() {
     local path=${1:-}
     local name=${2:-}
@@ -26,7 +26,7 @@ setTags() {
     if [ ! -z "$path" ]; then
         cd "$path"
         git fetch origin $branch:refs/remotes/origin/$branch -q
-        git tag -l | xargs git tag -d
+        git tag -l | xargs git tag -d >/dev/null 2>&1
         git fetch --tags -f -q
         latestTag=$(git describe --tags $(git rev-list --tags --max-count=1))
     fi
