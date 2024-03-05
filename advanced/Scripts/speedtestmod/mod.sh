@@ -26,7 +26,9 @@ setTags() {
     if [ ! -z "$path" ]; then
         cd "$path"
         git fetch origin $branch:refs/remotes/origin/$branch -q
-        git tag -l | xargs git tag -d >/dev/null 2>&1
+        if [[ "$url" != *"arevindh"* ]]; then
+            git tag -l | xargs git tag -d >/dev/null 2>&1
+        fi
         git fetch --tags -f -q
         latestTag=$(git describe --tags $(git rev-list --tags --max-count=1))
     fi
