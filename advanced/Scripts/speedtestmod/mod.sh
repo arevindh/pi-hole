@@ -7,21 +7,21 @@ curr_wp=$opt_dir/webpage.sh
 curr_db=$etc_dir/speedtest.db
 last_db=$curr_db.old
 db_table="speedtest"
-SKIP_INSTALL=true
 
 help() {
     echo "(Re)install Latest Speedtest Mod."
     echo "Usage: sudo $0 [up] [un] [db]"
-    echo "up - update Pi-hole (along with the Mod)"
-    echo "un - remove the mod (including all backups)"
-    echo "db - flush database (restore for a short while after)"
+    echo "up - update the mod (and Pi-hole if not in Docker)"
+    echo "un - remove the mod (and any database backups)"
+    echo "db - flush the database (if it's not empty, otherwise restore it)"
     echo "If no option is specified, the latest version of the Mod will be (re)installed."
 }
 
 setTags() {
     local path=${1:-}
     local name=${2:-}
-    local branch="${3:-master}"
+    local url=${3:-}
+    local branch="${4:-master}"
 
     if [ ! -z "$path" ]; then
         cd "$path"
@@ -29,10 +29,20 @@ setTags() {
         git fetch --tags -f -q
         latestTag=$(git describe --tags $(git rev-list --tags --max-count=1))
     fi
-    if [ ! -z "$name" ]; then
-        localTag=$(pihole -v | grep "$name" | cut -d ' ' -f 6)
+
+    if [[ "$url" != *"arevindh"* ]] && [ ! -z "$name" ]; then
+        local localTag=$(pihole -v | grep "$name" | cut -d ' ' -f 6)
+
         if [ "$localTag" == "HEAD" ]; then
             localTag=$(pihole -v | grep "$name" | cut -d ' ' -f 7)
+        fi
+
+        if [[ "$localTag" == *.* ]] && [[ "$localTag" < "$latestTag" ]]; then
+            latestTag=$localTag
+
+            if [ -f "$(git rev-parse --git-dir)"/shallow ]; then
+                git fetch --unshallow
+            fi
         fi
     fi
 }
@@ -50,19 +60,14 @@ download() {
         rm -rf "$name"
         git clone --depth=1 -b "$branch" "$url" "$name"
         git config --global --add safe.directory "$dest"
-        setTags "$name" "${src:-}" "$branch"
-        if [ ! -z "$src" ]; then
-            if [[ "$localTag" == *.* ]] && [[ "$localTag" < "$latestTag" ]]; then
-                latestTag=$localTag
-                git fetch --unshallow
-            fi
-        fi
+        setTags "$name" "$src" "$url" "$branch"
     elif [ ! -d "$dest/.git" ]; then
         mv -f "$dest" "$dest.old"
         download "$@"
     else # replace
         git config --global --add safe.directory "$dest"
         cd "$dest"
+
         if [ ! -z "$src" ]; then
             if [ "$url" != "old" ]; then
                 git remote -v | grep -q "old" || git remote rename origin old
@@ -74,9 +79,11 @@ download() {
                 git clean -ffdx
             fi
         fi
-        setTags "$dest" "${src:-}" "$branch"
+
+        setTags "$dest" "$src" "$url" "$branch"
         git reset --hard origin/"$branch"
         git checkout -B "$branch"
+
         if git rev-parse --verify "$branch" >/dev/null 2>&1; then
             git branch -u "origin/$branch" "$branch"
         else
@@ -84,14 +91,18 @@ download() {
         fi
     fi
 
-    # Checkout the last tag before/at HEAD or latest tag if the branch is master
-    if [ "$branch" == "master" ]; then
-        if ! last_tag_before_head=$(git describe --tags --abbrev=0 HEAD 2>/dev/null); then
-            last_tag_before_head=$latestTag
+    if [ "$branch" == "master" ] && [[ "$url" != *"ipitio"* ]]; then
+        # Get last tag before/at $latestTag installed
+        last_tag_before_current=$(git tag -l | grep '^v' | grep -v 'vDev' | sort -V | awk -v latestTag="$latestTag" '$1 <= latestTag' | tail -n1)
+
+        # If no such tag is found, fall back to $latestTag
+        if [ -z "$last_tag_before_current" ]; then
+            last_tag_before_current=$latestTag
         fi
 
-        if [ "$(git rev-parse HEAD)" != "$(git rev-parse $last_tag_before_head 2>/dev/null)" ]; then
-            git -c advice.detachedHead=false checkout "$last_tag_before_head"
+        # Check if HEAD is already at this tag, if not, check out the tag
+        if [ "$(git rev-parse HEAD)" != "$(git rev-parse $last_tag_before_current 2>/dev/null)" ]; then
+            git -c advice.detachedHead=false checkout "$last_tag_before_current"
         fi
     fi
     cd ..
@@ -112,9 +123,11 @@ manageHistory() {
         if [ -f $curr_db ] && ! isEmpty $curr_db; then
             echo "Flushing Database..."
             mv -f $curr_db $last_db
+
             if [ -f $etc_dir/last_speedtest ]; then
                 mv -f $etc_dir/last_speedtest $etc_dir/last_speedtest.old
             fi
+
             if [ -f /var/log/pihole/speedtest.log ]; then
                 mv -f /var/log/pihole/speedtest.log /var/log/pihole/speedtest.log.old
                 rm -f $etc_dir/speedtest.log
@@ -122,9 +135,11 @@ manageHistory() {
         elif [ -f $last_db ]; then
             echo "Restoring Database..."
             mv -f $last_db $curr_db
+
             if [ -f $etc_dir/last_speedtest.old ]; then
                 mv -f $etc_dir/last_speedtest.old $etc_dir/last_speedtest
             fi
+
             if [ -f /var/log/pihole/speedtest.log.old ]; then
                 mv -f /var/log/pihole/speedtest.log.old /var/log/pihole/speedtest.log
                 cp -af /var/log/pihole/speedtest.log $etc_dir/speedtest.log
@@ -144,6 +159,14 @@ notInstalled() {
     fi
 
     return 1
+}
+
+swapScripts() {
+    SKIP_INSTALL=true
+    set +u
+    source "$core_dir/automated install/basic-install.sh"
+    installScripts
+    set -u
 }
 
 installMod() {
@@ -169,6 +192,7 @@ installMod() {
         if [[ "$PKG_MANAGER" == *"apt-get"* ]]; then
             apt-get update
         fi
+
         $PKG_MANAGER install -y "${missingPkgs[@]}"
     fi
 
@@ -176,8 +200,7 @@ installMod() {
     download $etc_dir speedtest https://github.com/arevindh/pihole-speedtest
     download $admin_dir admin https://github.com/arevindh/AdminLTE web
 
-    source "$core_dir/automated install/basic-install.sh"
-    installScripts
+    swapScripts
     cp -af $core_dir/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
     pihole -a -s
     pihole updatechecker
@@ -190,8 +213,7 @@ uninstall() {
         pihole -a -s -1
         download /etc .pihole https://github.com/pi-hole/pi-hole Pi-hole
         download $admin_dir admin https://github.com/pi-hole/AdminLTE web
-        source "$core_dir/automated install/basic-install.sh"
-        installScripts
+        swapScripts
     fi
 
     manageHistory ${1:-}
@@ -226,6 +248,7 @@ update() {
     else
         echo "Systemd not found. Skipping Pi-hole update..."
     fi
+
     if [ "${1:-}" == "un" ]; then
         purge
         exit 0
@@ -238,14 +261,17 @@ abort() {
     if [ -d $admin_dir/admin/.git/refs/remotes/old ]; then
         download $admin_dir admin old web
     fi
+
     if [ -d $core_dir/.git/refs/remotes/old ]; then
         download /etc .pihole old Pi-hole
         source "$core_dir/automated install/basic-install.sh"
         installScripts
     fi
+
     if [ ! -f $curr_wp ] || ! cat $curr_wp | grep -q SpeedTest; then
         purge
     fi
+
     if [ -f $last_db ] && [ ! -f $curr_db ]; then
         mv $last_db $curr_db
     fi
@@ -267,15 +293,18 @@ commit() {
 main() {
     printf "Thanks for using Speedtest Mod!\nScript by @ipitio\n\n$(date)\n\n"
     local op=${1:-}
+
     if [ "$op" == "-h" ] || [ "$op" == "--help" ]; then
         help
         exit 0
     fi
+
     if [ $EUID != 0 ]; then
         sudo "$0" "$@"
         exit $?
     fi
-    set -Eeo pipefail
+
+    set -Eeuo pipefail
     trap '[ "$?" -eq "0" ] && commit || abort' EXIT
     trap 'abort' INT TERM
     shopt -s dotglob
@@ -302,9 +331,12 @@ main() {
     exit 0
 }
 
-aborted=0
-rm -f /tmp/pimod.log
-touch /tmp/pimod.log
-main "$@" 2>&1 | tee -a /tmp/pimod.log
-mv -f /tmp/pimod.log /var/log/pihole/mod.log
-exit $aborted
+# allow to source this script without running it
+if [[ "${SKIP_MOD:-}" != true ]]; then
+    aborted=0
+    rm -f /tmp/pimod.log
+    touch /tmp/pimod.log
+    main "$@" 2>&1 | tee -a /tmp/pimod.log
+    mv -f /tmp/pimod.log /var/log/pihole/mod.log
+    exit $aborted
+fi

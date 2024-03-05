@@ -16,6 +16,9 @@ upload real,
 share_url text
 );"
 
+SKIP_MOD=true
+source /opt/pihole/speedtestmod/mod.sh
+
 speedtest() {
     if grep -q official <<<"$(/usr/bin/speedtest --version)"; then
         if [[ -z "${serverid}" ]]; then
@@ -52,7 +55,7 @@ savetest() {
 '
     local temp_file=$(mktemp)
     local json_file="/tmp/speedtest_results"
-    jq "$rm_empty" "$json_file" > "$temp_file" && mv -f "$temp_file" "$json_file"
+    jq "$rm_empty" "$json_file" >"$temp_file" && mv -f "$temp_file" "$json_file"
     rm -f "$temp_file"
     chmod 644 /tmp/speedtest_results
     mv -f /tmp/speedtest_results /var/log/pihole/speedtest.log
@@ -104,75 +107,6 @@ notInstalled() {
     fi
 
     return 1
-}
-
-setTags() {
-    local path=${1:-}
-    local name=${2:-}
-    local branch="${3:-master}"
-
-    if [ ! -z "$path" ]; then
-        cd "$path"
-        git fetch origin $branch:refs/remotes/origin/$branch -q
-        git fetch --tags -f -q
-        latestTag=$(git describe --tags $(git rev-list --tags --max-count=1))
-    fi
-    if [ ! -z "$name" ]; then
-        localTag=$(pihole -v | grep "$name" | cut -d ' ' -f 6)
-        if [ "$localTag" == "HEAD" ]; then
-            localTag=$(pihole -v | grep "$name" | cut -d ' ' -f 7)
-        fi
-    fi
-}
-
-download() {
-    local path=$1
-    local name=$2
-    local url=$3
-    local src=${4:-}
-    local branch="${5:-master}"
-    local dest=$path/$name
-
-    if [ ! -d "$dest" ]; then # replicate
-        cd "$path"
-        rm -rf "$name"
-        git clone --depth=1 -b "$branch" "$url" "$name"
-        git config --global --add safe.directory "$dest"
-        setTags "$name" "${src:-}" "$branch"
-        if [ ! -z "$src" ]; then
-            if [[ "$localTag" == *.* ]] && [[ "$localTag" < "$latestTag" ]]; then
-                latestTag=$localTag
-                git fetch --unshallow
-            fi
-        fi
-    else # replace
-        git config --global --add safe.directory "$dest"
-        cd "$dest"
-        if [ ! -z "$src" ]; then
-            if [ "$url" != "old" ]; then
-                git remote -v | grep -q "old" || git remote rename origin old
-                git remote -v | grep -q "origin" && git remote remove origin
-                git remote add -t "$branch" origin "$url"
-            elif [ -d .git/refs/remotes/old ]; then
-                git remote remove origin
-                git remote rename old origin
-                git clean -ffdx
-            fi
-        fi
-        setTags "$dest" "${src:-}" "$branch"
-        git reset --hard origin/"$branch"
-        git checkout -B "$branch"
-        if git rev-parse --verify "$branch" >/dev/null 2>&1; then
-            git branch -u "origin/$branch" "$branch"
-        else
-            git checkout --track "origin/$branch"
-        fi
-    fi
-
-    if [ "$(git rev-parse HEAD)" != "$(git rev-parse $latestTag)" ]; then
-        git -c advice.detachedHead=false checkout "$latestTag"
-    fi
-    cd ..
 }
 
 librespeed() {

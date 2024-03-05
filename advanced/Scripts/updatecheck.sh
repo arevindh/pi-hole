@@ -17,7 +17,7 @@ function get_local_branch() {
 function get_local_version() {
     # Return active version
     cd "${1}" 2> /dev/null || return 1
-    local local_v=$(git tag --sort=-version:refname | head -n 1)
+    local_v=$(git tag --sort=-version:refname | head -n 1)
     if [[ "${local_v}" == "vDev" ]]; then
         local_v=$(git tag --sort=-version:refname | head -n 2 | tail -n 1)
     fi
@@ -30,7 +30,11 @@ function get_local_hash() {
 }
 
 function get_remote_version() {
-    curl -s "https://api.github.com/repos/arevindh/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || { curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1; }
+    if [[ "${1}" == "docker-pi-hole" ]]; then
+        curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1
+    else
+        curl -s "https://api.github.com/repos/arevindh/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || { curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1; }
+    fi
 }
 
 
