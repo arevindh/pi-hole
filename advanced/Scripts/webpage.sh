@@ -623,8 +623,8 @@ schedule=\$(grep "SPEEDTESTSCHEDULE" "$setupVars" | cut -f2 -d"=")
 SKIP_MOD=true
 source /opt/pihole/speedtestmod/mod.sh
 
-# if "pihole -v" includes "N/A", update the mod
-if [[ "\$(/usr/local/bin/pihole -v)" == *"N/A"* ]]; then
+# if "pihole -v" includes "N/A" or doesn't include "speedtest", download the mod
+if [[ "\$(/usr/local/bin/pihole -v)" == *"N/A"* ]] || [[ "\$(/usr/local/bin/pihole -v)" != *"speedtest"* ]]; then
     download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
     pihole updatechecker
 fi
