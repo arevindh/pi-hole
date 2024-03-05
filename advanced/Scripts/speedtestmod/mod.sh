@@ -93,12 +93,18 @@ download() {
     fi
 
     if [ "$branch" == "master" ] && [[ "$url" != *"ipitio"* ]]; then
-        # Get last tag before/at $latestTag installed
-        last_tag_before_current=$(git tag -l | grep '^v' | grep -v 'vDev' | sort -V | awk -v latestTag="$latestTag" '$1 <= latestTag' | tail -n1)
+        if [[ "$url" == *"arevindh"* ]]; then
+            if ! last_tag_before_current=$(git describe --tags --abbrev=0 HEAD 2>/dev/null); then
+                last_tag_before_current=$latestTag
+            fi
+        else
+            # Get last tag before/at $latestTag installed
+            last_tag_before_current=$(git tag -l | grep '^v' | grep -v 'vDev' | sort -V | awk -v latestTag="$latestTag" '$1 <= latestTag' | tail -n1)
 
-        # If no such tag is found, fall back to $latestTag
-        if [ -z "$last_tag_before_current" ]; then
-            last_tag_before_current=$latestTag
+            # If no such tag is found, fall back to $latestTag
+            if [ -z "$last_tag_before_current" ]; then
+                last_tag_before_current=$latestTag
+            fi
         fi
 
         # Check if HEAD is already at this tag, if not, check out the tag
