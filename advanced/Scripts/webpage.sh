@@ -623,10 +623,10 @@ schedule=\$(grep "SPEEDTESTSCHEDULE" "$setupVars" | cut -f2 -d"=")
 SKIP_MOD=true
 source /opt/pihole/speedtestmod/mod.sh
 
-# if "pihole -v" includes "N/A" or doesn't include "speedtest", download the mod
-if [[ "\$(/usr/local/bin/pihole -v)" == *"N/A"* ]] || [[ "\$(/usr/local/bin/pihole -v)" != *"speedtest"* ]]; then
-    download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
-    pihole updatechecker
+# if "pihole -v" includes "N/A" or doesn't include "speedtest", get v
+if [[ "\$(/usr/local/bin/pihole -v)" == *"N/A"* ]] || [[ "\$(/usr/local/bin/pihole -v)" != *"Speedtest"* ]]; then
+    [ -d /etc/pihole/speedtest ] || download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
+    /usr/local/bin/pihole updatechecker
 fi
 
 # if schedule is set and interval is "nan", set the speedtest interval to the schedule

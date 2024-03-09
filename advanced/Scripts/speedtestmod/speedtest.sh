@@ -15,23 +15,14 @@ download real,
 upload real,
 share_url text
 );"
-
 SKIP_MOD=true
 source /opt/pihole/speedtestmod/mod.sh
 
 speedtest() {
     if grep -q official <<<"$(/usr/bin/speedtest --version)"; then
-        if [[ -z "${serverid}" ]]; then
-            /usr/bin/speedtest --accept-gdpr --accept-license -f json
-        else
-            /usr/bin/speedtest -s $serverid --accept-gdpr --accept-license -f json || /usr/bin/speedtest --accept-gdpr --accept-license -f json
-        fi
+        [[ ! -z "${serverid}" ]] && /usr/bin/speedtest -s $serverid --accept-gdpr --accept-license -f json || /usr/bin/speedtest --accept-gdpr --accept-license -f json
     else
-        if [[ -z "${serverid}" ]]; then
-            /usr/bin/speedtest --json --share --secure
-        else
-            /usr/bin/speedtest --server $serverid --json --share --secure || /usr/bin/speedtest --json --share --secure
-        fi
+        [[ ! -z "${serverid}" ]] && /usr/bin/speedtest --server $serverid --json --share --secure || /usr/bin/speedtest --json --share --secure
     fi
 }
 
@@ -46,9 +37,6 @@ savetest() {
     local download=${8:-0}
     local upload=${9:-0}
     local share_url=${10:-"#"}
-    sqlite3 /etc/pihole/speedtest.db "$create_table"
-    sqlite3 /etc/pihole/speedtest.db "insert into speedtest values (NULL, '${start_time}', '${stop_time}', '${isp}', '${from_ip}', '${server}', ${server_dist}, ${server_ping}, ${download}, ${upload}, '${share_url}');"
-
     local rm_empty='
   def nonempty: . and length > 0 and (type != "object" or . != {}) and (type != "array" or any(.[]; . != ""));
   if type == "array" then map(walk(if type == "object" then with_entries(select(.value | nonempty)) else . end)) else walk(if type == "object" then with_entries(select(.value | nonempty)) else . end) end
@@ -61,37 +49,27 @@ savetest() {
     mv -f /tmp/speedtest_results /var/log/pihole/speedtest.log
     cp -af /var/log/pihole/speedtest.log /etc/pihole/speedtest.log
     rm -f "$out"
+    sqlite3 /etc/pihole/speedtest.db "$create_table"
+    sqlite3 /etc/pihole/speedtest.db "insert into speedtest values (NULL, '${start_time}', '${stop_time}', '${isp}', '${from_ip}', '${server}', ${server_dist}, ${server_ping}, ${download}, ${upload}, '${share_url}');"
     [ "$isp" == "No Internet" ] && exit 1 || exit 0
 }
 
 isAvailable() {
     if [ -x "$(command -v apt-get)" ]; then
         # Check if there is a candidate and it is not "(none)"
-        if apt-cache policy "$1" | grep -q "Candidate:" && ! apt-cache policy "$1" | grep -q "Candidate: (none)"; then
-            return 0
-        fi
+        apt-cache policy "$1" | grep -q "Candidate:" && ! apt-cache policy "$1" | grep -q "Candidate: (none)" && return 0 || return 1
     elif [ -x "$(command -v dnf)" ] || [ -x "$(command -v yum)" ]; then
         local PKG_MANAGER=$(command -v dnf || command -v yum)
-        if $PKG_MANAGER list available "$1" &>/dev/null; then
-            return 0
-        fi
+        $PKG_MANAGER list available "$1" &>/dev/null && return 0 || return 1
     else
         echo "Unsupported package manager!"
         exit 1
     fi
-
-    return 1
 }
 
 swaptest() {
     if isAvailable $1; then
-        if [ -x "$(command -v apt-get)" ]; then
-            apt-get install -y $1 $2-
-        elif [ -x "$(command -v dnf)" ]; then
-            dnf install -y --allowerasing $1
-        else
-            yum install -y --allowerasing $1
-        fi
+        [ -x "$(command -v apt-get)" ] && apt-get install -y $1 $2- || { [ -x "$(command -v dnf)" ] && dnf install -y --allowerasing $1 || yum install -y --allowerasing $1; }
     fi
 }
 
@@ -126,12 +104,49 @@ librespeed() {
     fi
     download /etc/pihole librespeed https://github.com/librespeed/speedtest-cli
     cd librespeed
-    if [ -d out ]; then
-        rm -rf out
-    fi
+    [ ! -d out ] || rm -rf out
     ./build.sh
     mv -f out/* /usr/bin/speedtest
     chmod +x /usr/bin/speedtest
+}
+
+addSource() {
+    if [[ "$PKG_MANAGER" == *"yum"* || "$PKG_MANAGER" == *"dnf"* ]]; then
+        if [ ! -f /etc/yum.repos.d/ookla_speedtest-cli.repo ]; then
+            echo "Adding speedtest source for RPM..."
+            curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.rpm.sh | sudo bash
+        fi
+
+        yum list speedtest | grep -q "Available Packages" && $PKG_MANAGER install -y speedtest || :
+    elif [[ "$PKG_MANAGER" == *"apt-get"* ]]; then
+        if [ ! -f /etc/apt/sources.list.d/ookla_speedtest-cli.list ]; then
+            echo "Adding speedtest source for DEB..."
+            if [ -e /etc/os-release ]; then
+                . /etc/os-release
+                local base="ubuntu debian"
+                local os=${ID}
+                local dist=${VERSION_CODENAME}
+                if [ ! -z "${ID_LIKE-}" ] && [[ "${base//\"/}" =~ "${ID_LIKE//\"/}" ]] && [ "${os}" != "ubuntu" ]; then
+                    os=${ID_LIKE%% *}
+                    [ -z "${UBUNTU_CODENAME-}" ] && UBUNTU_CODENAME=$(/usr/bin/lsb_release -cs)
+                    dist=${UBUNTU_CODENAME}
+                    [ -z "$dist" ] && dist=${VERSION_CODENAME}
+                fi
+                wget -O /tmp/script.deb.sh https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh >/dev/null 2>&1
+                chmod +x /tmp/script.deb.sh
+                os=$os dist=$dist /tmp/script.deb.sh
+                rm -f /tmp/script.deb.sh
+            else
+                curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
+            fi
+
+            sed -i 's/g]/g allow-insecure=yes trusted=yes]/' /etc/apt/sources.list.d/ookla_speedtest-cli.list
+            apt-get update
+        fi
+    else
+        echo "Unsupported package manager!"
+        exit 1
+    fi
 }
 
 run() {
@@ -151,9 +166,7 @@ run() {
             local from_ip=$(jq -r '.interface.externalIp' <<<"$res")
             local server_ping=$(jq -r '.ping.latency' <<<"$res")
             local share_url=$(jq -r '.result.url' <<<"$res")
-            if [ -z "$server_dist" ]; then
-                server_dist="-1"
-            fi
+            [ ! -z "$server_dist" ] || server_dist="-1"
         else # speedtest-cli
             local server_name=$(jq -r '.server.sponsor' <<<"$res")
             local download=$(jq -r '.download' <<<"$res" | awk '{$1=$1/1000/1000; print $1;}' | sed 's/,/./g')
@@ -162,9 +175,7 @@ run() {
             local from_ip=$(jq -r '.client.ip' <<<"$res")
             local server_ping=$(jq -r '.ping' <<<"$res")
             local share_url=$(jq -r '.share' <<<"$res")
-            if [ -z "$server_dist" ]; then
-                server_dist=$(jq -r '.server.d' <<<"$res")
-            fi
+            [ ! -z "$server_dist" ] || server_dist=$(jq -r '.server.d' <<<"$res")
         fi
 
         savetest "$start" "$stop" "$isp" "$from_ip" "$server_name" "$server_dist" "$server_ping" "$download" "$upload" "$share_url"
@@ -184,49 +195,9 @@ run() {
         savetest "$start" "$stop"
     else
         if notInstalled speedtest && notInstalled speedtest-cli; then
-            if [ -f /usr/bin/speedtest ]; then
-                rm -f /usr/bin/speedtest
-            fi
-
-            if [[ "$PKG_MANAGER" == *"yum"* || "$PKG_MANAGER" == *"dnf"* ]]; then
-                if [ ! -f /etc/yum.repos.d/ookla_speedtest-cli.repo ]; then
-                    echo "Adding speedtest source for RPM..."
-                    curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.rpm.sh | sudo bash
-                fi
-
-                if yum list speedtest | grep -q "Available Packages"; then
-                    $PKG_MANAGER install -y speedtest
-                fi
-            elif [[ "$PKG_MANAGER" == *"apt-get"* ]]; then
-                if [ ! -f /etc/apt/sources.list.d/ookla_speedtest-cli.list ]; then
-                    echo "Adding speedtest source for DEB..."
-                    if [ -e /etc/os-release ]; then
-                        . /etc/os-release
-                        local base="ubuntu debian"
-                        local os=${ID}
-                        local dist=${VERSION_CODENAME}
-                        if [ ! -z "${ID_LIKE-}" ] && [[ "${base//\"/}" =~ "${ID_LIKE//\"/}" ]] && [ "${os}" != "ubuntu" ]; then
-                            os=${ID_LIKE%% *}
-                            [ -z "${UBUNTU_CODENAME-}" ] && UBUNTU_CODENAME=$(/usr/bin/lsb_release -cs)
-                            dist=${UBUNTU_CODENAME}
-                            [ -z "$dist" ] && dist=${VERSION_CODENAME}
-                        fi
-                        wget -O /tmp/script.deb.sh https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh >/dev/null 2>&1
-                        chmod +x /tmp/script.deb.sh
-                        os=$os dist=$dist /tmp/script.deb.sh
-                        rm -f /tmp/script.deb.sh
-                    else
-                        curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
-                    fi
-
-                    sed -i 's/g]/g allow-insecure=yes trusted=yes]/' /etc/apt/sources.list.d/ookla_speedtest-cli.list
-                    apt-get update
-                fi
-
-                if isAvailable speedtest; then
-                    $PKG_MANAGER install -y speedtest
-                fi
-            fi
+            [ ! -f /usr/bin/speedtest ] || rm -f /usr/bin/speedtest
+            addSource
+            isAvailable speedtest && $PKG_MANAGER install -y speedtest || :
         elif ! notInstalled speedtest; then
             swaptest speedtest-cli speedtest
         else
@@ -244,51 +215,12 @@ main() {
         exit $?
     fi
 
-    if [ ! -d /etc/pihole/speedtest ]; then
-        download $etc_dir speedtest https://github.com/arevindh/pihole-speedtest
-    fi
-
+    [ -d /etc/pihole/speedtest ] || download $etc_dir speedtest https://github.com/arevindh/pihole-speedtest
     PKG_MANAGER=$(command -v apt-get || command -v dnf || command -v yum)
+
     if [ ! -f /usr/bin/speedtest ]; then
-        if [[ "$PKG_MANAGER" == *"yum"* || "$PKG_MANAGER" == *"dnf"* ]]; then
-            if [ ! -f /etc/yum.repos.d/ookla_speedtest-cli.repo ]; then
-                echo "Adding speedtest source for RPM..."
-                curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.rpm.sh | sudo bash
-            fi
-        elif [[ "$PKG_MANAGER" == *"apt-get"* ]]; then
-            if [ ! -f /etc/apt/sources.list.d/ookla_speedtest-cli.list ]; then
-                echo "Adding speedtest source for DEB..."
-                if [ -e /etc/os-release ]; then
-                    . /etc/os-release
-                    local base="ubuntu debian"
-                    local os=${ID}
-                    local dist=${VERSION_CODENAME}
-                    if [ ! -z "${ID_LIKE-}" ] && [[ "${base//\"/}" =~ "${ID_LIKE//\"/}" ]] && [ "${os}" != "ubuntu" ]; then
-                        os=${ID_LIKE%% *}
-                        [ -z "${UBUNTU_CODENAME-}" ] && UBUNTU_CODENAME=$(/usr/bin/lsb_release -cs)
-                        dist=${UBUNTU_CODENAME}
-                        [ -z "$dist" ] && dist=${VERSION_CODENAME}
-                    fi
-                    wget -O /tmp/script.deb.sh https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh >/dev/null 2>&1
-                    chmod +x /tmp/script.deb.sh
-                    os=$os dist=$dist /tmp/script.deb.sh
-                    rm -f /tmp/script.deb.sh
-                else
-                    curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
-                fi
-
-                sed -i 's/g]/g allow-insecure=yes trusted=yes]/' /etc/apt/sources.list.d/ookla_speedtest-cli.list
-                apt-get update
-            fi
-        fi
-
-        if isAvailable speedtest; then
-            $PKG_MANAGER install -y speedtest
-        elif isAvailable speedtest-cli; then
-            $PKG_MANAGER install -y speedtest-cli
-        else
-            librespeed
-        fi
+        addSource
+        isAvailable speedtest && $PKG_MANAGER install -y speedtest || { isAvailable speedtest-cli && $PKG_MANAGER install -y speedtest-cli || librespeed; }
     fi
 
     echo "Running Test..."
