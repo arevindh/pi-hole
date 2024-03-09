@@ -135,8 +135,8 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
         done
 
         if [ ${#missingPkgs[@]} -gt 0 ]; then
-            [[ "$PKG_MANAGER" != *"apt-get"* ]] || apt-get update
-            $PKG_MANAGER install -y "${missingPkgs[@]}"
+            [[ "$PKG_MANAGER" != *"apt-get"* ]] || apt-get update > /dev/null
+            $PKG_MANAGER install -y "${missingPkgs[@]}" > /dev/null
         fi
 
         download /etc .pihole https://github.com/arevindh/pi-hole Pi-hole
