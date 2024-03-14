@@ -612,6 +612,7 @@ generate_cron_schedule() {
         addOrEditKeyValPair "${setupVars}" "SPEEDTESTSCHEDULE" "$(echo "scale=3; $total_seconds / 3600" | bc)"
     fi
 
+    [ -d /opt/pihole/speedtestmod ] || return
     sudo bash -c "cat > $(printf %q "$schedule_script")" << EOF
 #!/bin/bash
 # Schedule script to handle complex cron schedules
@@ -623,10 +624,8 @@ schedule=\$(grep "SPEEDTESTSCHEDULE" "$setupVars" | cut -f2 -d"=")
 SKIP_MOD=true
 source /opt/pihole/speedtestmod/mod.sh
 
-# if "pihole -v" includes "N/A" or doesn't include "speedtest", get v
-if [[ "\$(/usr/local/bin/pihole -v)" == *"N/A"* ]] || [[ "\$(/usr/local/bin/pihole -v)" != *"Speedtest"* ]]; then
-    [ -d /etc/pihole/speedtest ] || download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
-    /usr/local/bin/pihole updatechecker
+if [ ! -f /etc/pihole/speedtest/updated ]; then
+    /usr/bin/tmux new-session -d "download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest ; touch /etc/pihole/speedtest/updated ; /usr/local/bin/pihole updatechecker"
 fi
 
 # if schedule is set and interval is "nan", set the speedtest interval to the schedule

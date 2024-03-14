@@ -47,7 +47,7 @@ savetest() {
     rm -f "$temp_file"
     chmod 644 /tmp/speedtest_results
     mv -f /tmp/speedtest_results /var/log/pihole/speedtest.log
-    cp -af /var/log/pihole/speedtest.log /etc/pihole/speedtest.log
+    \cp -af /var/log/pihole/speedtest.log /etc/pihole/speedtest.log
     rm -f "$out"
     sqlite3 /etc/pihole/speedtest.db "$create_table"
     sqlite3 /etc/pihole/speedtest.db "insert into speedtest values (NULL, '${start_time}', '${stop_time}', '${isp}', '${from_ip}', '${server}', ${server_dist}, ${server_ping}, ${download}, ${upload}, '${share_url}');"
