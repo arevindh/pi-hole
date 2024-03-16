@@ -623,7 +623,11 @@ schedule=\$(grep "SPEEDTESTSCHEDULE" "$setupVars" | cut -f2 -d"=")
 SKIP_MOD=true
 source /opt/pihole/speedtestmod/mod.sh
 
-[ -f /etc/pihole/speedtest/updated ] || /usr/bin/tmux new-session -d "download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest && touch /etc/pihole/speedtest/updated && /usr/local/bin/pihole updatechecker"
+if [ ! -f /etc/pihole/speedtest/updated ]; then
+    download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
+    touch /etc/pihole/speedtest/updated
+    /usr/local/bin/pihole updatechecker
+fi
 
 # if schedule is set and interval is "nan", set the speedtest interval to the schedule
 if [[ "\$interval_seconds" == "nan" ]]; then
