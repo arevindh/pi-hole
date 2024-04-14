@@ -23,6 +23,7 @@ download() {
     local url=$3
     local localVersion=${4:-}
     local branch="${5:-master}"
+    local reinstall=${6:-false}
     local dest=$path/$name
 
     [ -d "$dest" ] && [ ! -d "$dest/.git" ] && mv -f "$dest" "$dest.old" || :
@@ -31,10 +32,7 @@ download() {
     git config --global --add safe.directory "$dest"
 
     if [ "$aborted" == "0" ]; then
-        if ! git remote -v | grep -q "old" && git remote -v | grep -q "origin"; then
-            git remote rename origin old
-        fi
-
+        ! git remote -v | grep -q "old" && git remote -v | grep -q "origin" && git remote rename origin old || :
         git remote -v | grep -q "origin" && git remote remove origin
         git remote add -t "$branch" origin "$url"
     elif [ -d .git/refs/remotes/old ]; then
@@ -61,10 +59,11 @@ download() {
     git checkout -B "$branch" -q
     [ "$aborted" == "0" ] && { [[ "$url" != *"arevindh"* ]] && [[ "$url" != *"ipitio"* ]] && ! git remote -v | grep -q "old.*ipitio" && [[ "$localTag" < "$latestTag" ]] && latestTag=$(awk -v lv="$localTag" '$1 <= lv' <<<"$tags" | tail -n1) || :; } || latestTag=$localTag
     local unstable=false
-    [[ "$url" != *"ipitio"* ]] || unstable=true
+    [[ "$url" == *"ipitio"* ]] && $stable && unstable=true || : # invert -t for me
     [[ "$url" == *"arevindh"* ]] && ! $stable && unstable=true || :
+    ! $reinstall || unstable=false
 
-    if [ "$branch" == "master" ] && ! $unstable && [ "$(git rev-parse HEAD)" != "$(git rev-parse $latestTag 2>/dev/null)" ]; then
+    if ! $unstable && [ "$(git rev-parse HEAD)" != "$(git rev-parse $latestTag 2>/dev/null)" ]; then
         [[ "$latestTag" == *.* ]] && git fetch origin tag $latestTag --depth=1 -q || git fetch origin $latestTag --depth=1 -q
         git -c advice.detachedHead=false checkout "$latestTag" -q
     fi
@@ -100,7 +99,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
     curr_db=$etc_dir/speedtest.db
     last_db=$curr_db.old
     db_table="speedtest"
-    st_ver=""
+    st_ver="speedtest"
     core_ver="Pi-hole"
     admin_ver="web"
     org_core_ver=$core_ver
@@ -361,11 +360,11 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     $PKG_MANAGER install -y "${missingPkgs[@]}" &>/dev/null
                 fi
 
-                download /etc pihole-speedtest https://github.com/arevindh/pihole-speedtest $st_ver
+                download /etc pihole-speedtest https://github.com/arevindh/pihole-speedtest $st_ver "" $reinstall
 
                 if $backup; then
-                    download /etc .pihole.mod https://github.com/arevindh/pi-hole $mod_core_ver
-                    download $html_dir admin.mod https://github.com/arevindh/AdminLTE $mod_admin_ver
+                    download /etc .pihole.mod https://github.com/arevindh/pi-hole $mod_core_ver "" $reinstall
+                    download $html_dir admin.mod https://github.com/arevindh/AdminLTE $mod_admin_ver "" $reinstall
                     echo "Backing up Pi-hole..."
                 fi
 
@@ -391,12 +390,12 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     fi
                 done
 
-                $backup || download /etc .pihole https://github.com/ipitio/pi-hole $mod_core_ver ipitio
+                $backup || download /etc .pihole https://github.com/arevindh/pi-hole $mod_core_ver "" $reinstall
                 echo "Installing Mod..."
                 swapScripts
                 \cp -af $core_dir/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
                 pihole -a -s
-                $backup || download $html_dir admin https://github.com/ipitio/AdminLTE $mod_admin_ver
+                $backup || download $html_dir admin https://github.com/arevindh/AdminLTE $mod_admin_ver "" $reinstall
             fi
 
             pihole updatechecker
