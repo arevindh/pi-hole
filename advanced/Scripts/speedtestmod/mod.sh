@@ -173,7 +173,6 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
         rm -rf $html_dir/admin.mod
         rm -f "$curr_db".*
         rm -f $etc_dir/last_speedtest.*
-        rm -f /tmp/st_vers
         ! isEmpty $curr_db || rm -f $curr_db
     }
 
