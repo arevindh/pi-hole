@@ -215,7 +215,6 @@ main() {
         exit $?
     fi
 
-    [ -d /etc/pihole/speedtest ] || download $etc_dir speedtest https://github.com/arevindh/pihole-speedtest
     PKG_MANAGER=$(command -v apt-get || command -v dnf || command -v yum)
 
     if [ ! -f /usr/bin/speedtest ]; then

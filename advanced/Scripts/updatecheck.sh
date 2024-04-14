@@ -143,13 +143,13 @@ fi
 
 # get Speedtest versions
 
-SPEEDTEST_VERSION="$(get_local_version /etc/pihole/speedtest)"
+SPEEDTEST_VERSION="$(get_local_version /etc/pihole-speedtest)"
 addOrEditKeyValPair "${VERSION_FILE}" "SPEEDTEST_VERSION" "${SPEEDTEST_VERSION}"
 
-SPEEDTEST_BRANCH="$(get_local_branch /etc/pihole/speedtest)"
+SPEEDTEST_BRANCH="$(get_local_branch /etc/pihole-speedtest)"
 addOrEditKeyValPair "${VERSION_FILE}" "SPEEDTEST_BRANCH" "${SPEEDTEST_BRANCH}"
 
-SPEEDTEST_HASH="$(get_local_hash /etc/pihole/speedtest)"
+SPEEDTEST_HASH="$(get_local_hash /etc/pihole-speedtest)"
 addOrEditKeyValPair "${VERSION_FILE}" "SPEEDTEST_HASH" "${SPEEDTEST_HASH}"
 
 GITHUB_SPEEDTEST_VERSION="$(get_remote_version pihole-speedtest)"

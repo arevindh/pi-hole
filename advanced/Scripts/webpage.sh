@@ -620,15 +620,6 @@ last_run_file="/etc/pihole/last_speedtest"
 interval_seconds=$total_seconds
 schedule=\$(grep "SPEEDTESTSCHEDULE" "$setupVars" | cut -f2 -d"=")
 
-SKIP_MOD=true
-source /opt/pihole/speedtestmod/mod.sh
-
-if [ ! -f /etc/pihole/speedtest/updated ]; then
-    download /etc/pihole speedtest https://github.com/arevindh/pihole-speedtest
-    touch /etc/pihole/speedtest/updated
-    /usr/local/bin/pihole updatechecker
-fi
-
 # if schedule is set and interval is "nan", set the speedtest interval to the schedule
 if [[ "\$interval_seconds" == "nan" ]]; then
     if [[ "\${schedule-}" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; then
@@ -650,10 +641,8 @@ if [[ -f "\$last_run_file" ]]; then
     fi
 fi
 
-if [[ \$(tmux list-sessions 2>/dev/null | grep -c pimod) -eq 0 ]]; then
-    echo \$(date +%s) > "\$last_run_file"
-    /usr/bin/tmux new-session -d -s pimod "cat $speedtestfile | sudo bash"
-fi
+echo \$(date +%s) > "\$last_run_file"
+cat $speedtestfile | sudo bash
 EOF
     sudo chmod +x "$schedule_script"
 

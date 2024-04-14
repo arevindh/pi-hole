@@ -72,7 +72,7 @@ HTML_DIRECTORY="/var/www/html"
 WEB_GIT_DIRECTORY="${HTML_DIRECTORY}/admin"
 SHM_DIRECTORY="/dev/shm"
 ETC="/etc"
-SPEEDTEST_GIT_DIRECTORY="/etc/pihole/speedtest"
+SPEEDTEST_GIT_DIRECTORY="/etc/pihole-speedtest"
 
 # Files required by Pi-hole
 # https://discourse.pi-hole.net/t/what-files-does-pi-hole-use/1684
