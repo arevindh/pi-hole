@@ -365,8 +365,8 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                 download /etc pihole-speedtest https://github.com/arevindh/pihole-speedtest $st_ver
 
                 if $backup; then
-                    download /etc .pihole.mod https://github.com/ipitio/pi-hole $mod_core_ver ipitio
-                    download $html_dir admin.mod https://github.com/ipitio/AdminLTE $mod_admin_ver
+                    download /etc .pihole.mod https://github.com/arevindh/pi-hole $mod_core_ver
+                    download $html_dir admin.mod https://github.com/arevindh/AdminLTE $mod_admin_ver
                     echo "Backing up Pi-hole..."
                 fi
 
