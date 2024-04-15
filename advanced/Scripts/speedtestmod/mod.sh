@@ -55,8 +55,6 @@ download() {
     git fetch origin --depth=1 $branch:refs/remotes/origin/$branch -q
     git reset --hard origin/"$branch" -q
     git checkout -B "$branch" -q
-    git tag | xargs git tag -d >/dev/null 2>&1
-    git fetch --tags -q
     local currentCommit=$(getTag "$dest")
 
     if [ -z "$desiredVersion" ]; then # if empty, get the latest version
