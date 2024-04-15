@@ -1,71 +1,79 @@
 #!/bin/bash
-aborted=0
-stable=true
 
 getTag() {
-    local tag=""
+    local foundCommit=""
 
     if [ -d $1 ]; then
         cd $1
-        tag=$(git rev-parse HEAD 2>/dev/null)
+        foundCommit=$(git rev-parse HEAD 2>/dev/null)
         cd - &>/dev/null
     elif [ -x "$(command -v pihole)" ]; then
-        tag=$(pihole -v | grep "$1" | cut -d ' ' -f 6)
-        [ "$tag" != "HEAD" ] || tag=$(pihole -v | grep "$1" | cut -d ' ' -f 7)
+        foundCommit=$(pihole -v | grep "$1" | cut -d ' ' -f 6)
+        [ "$foundCommit" != "HEAD" ] && [ "$foundCommit" != "$(git rev-parse --abbrev-ref HEAD)" ] || foundCommit=$(pihole -v | grep "$1" | cut -d ' ' -f 7)
     fi
 
-    echo $tag
+    echo $foundCommit
 }
 
 download() {
     local path=$1
     local name=$2
     local url=$3
-    local localVersion=${4:-}
+    local desiredVersion="${4:-}"
     local branch="${5:-master}"
-    local reinstall=${6:-false}
+    local snapToTag="${6:-true}"
     local dest=$path/$name
+    local aborting=false
 
     [ -d "$dest" ] && [ ! -d "$dest/.git" ] && mv -f "$dest" "$dest.old" || :
     [ -d "$dest" ] || git clone --depth=1 -b "$branch" "$url" "$dest" -q
     cd "$dest"
     git config --global --add safe.directory "$dest"
 
-    if [ "$aborted" == "0" ]; then
-        ! git remote -v | grep -q "old" && git remote -v | grep -q "origin" && git remote rename origin old || :
-        git remote -v | grep -q "origin" && git remote remove origin
-        git remote add -t "$branch" origin "$url"
-    elif [ -d .git/refs/remotes/old ]; then
-        git remote -v | grep -q "origin" && git remote remove origin
-        git remote rename old origin
-        url=$(git remote get-url origin)
+    if [ ! -z "$desiredVersion" ]; then
+        local repos=("Pi-hole" "web" "speedtest")
+
+        for repo in "${repos[@]}"; do
+            if [[ "$desiredVersion" == *"$repo"* ]]; then
+                aborting=true
+                break
+            fi
+        done
     fi
 
-    local tags=$(git ls-remote --tags "$url" | awk -F/ '{print $3}' | grep '^v[0-9]' | grep -v '\^{}' | sort -V)
-    local latestTag=$(tail -n1 <<<"$tags")
-    local localTag=$latestTag
-
-    if [ ! -z "$localVersion" ]; then
-        if [ "$localVersion" != "Pi-hole" ] && [ "$localVersion" != "web" ] && [ "$localVersion" != "speedtest" ]; then
-            latestTag=$localVersion
-            localTag=$latestTag
-        else
-            localTag=$(getTag "$localVersion")
-        fi
+    if ! $aborting; then
+        ! git remote -v | grep -q "old" && git remote -v | grep -q "origin" && git remote rename origin old || :
+        ! git remote -v | grep -q "origin" || git remote remove origin
+        git remote add -t "$branch" origin "$url"
+    elif git remote -v | grep -q "old"; then
+        ! git remote -v | grep -q "origin" || git remote remove origin
+        git remote rename old origin
     fi
 
     git fetch origin --depth=1 $branch:refs/remotes/origin/$branch -q
     git reset --hard origin/"$branch" -q
     git checkout -B "$branch" -q
-    [ "$aborted" == "0" ] && { [[ "$url" != *"arevindh"* ]] && [[ "$url" != *"ipitio"* ]] && ! git remote -v | grep -q "old.*ipitio" && [[ "$localTag" < "$latestTag" ]] && latestTag=$(awk -v lv="$localTag" '$1 <= lv' <<<"$tags" | tail -n1) || :; } || latestTag=$localTag
-    local unstable=false
-    [[ "$url" == *"ipitio"* ]] && $stable && unstable=true || : # invert -t for me
-    [[ "$url" == *"arevindh"* ]] && ! $stable && unstable=true || :
-    ! $reinstall || unstable=false
+    git tag | xargs git tag -d >/dev/null 2>&1
+    git fetch --tags -q
+    local currentCommit=$(getTag "$dest")
 
-    if ! $unstable && [ "$(git rev-parse HEAD)" != "$(git rev-parse $latestTag 2>/dev/null)" ]; then
-        [[ "$latestTag" == *.* ]] && git fetch origin tag $latestTag --depth=1 -q || git fetch origin $latestTag --depth=1 -q
-        git -c advice.detachedHead=false checkout "$latestTag" -q
+    if [ -z "$desiredVersion" ]; then # if empty, get the latest version
+        url=$(git remote get-url origin)
+        [[ "$url" == *"ipitio"* ]] && snapToTag=$(echo "$snapToTag" | grep -q "true" && echo "false" || echo "true")
+
+        if [ "$snapToTag" == "true" ]; then
+            local latestTag=$(git show-ref --tags | awk -F/ '{print $3}' | grep '^v[0-9]' | grep -v '\^{}' | sort -V | tail -n1)
+            [ ! -z "$latestTag" ] && desiredVersion=$latestTag || desiredVersion=$currentCommit
+        fi
+    elif $aborting; then
+        desiredVersion=$(getTag "$desiredVersion")
+    fi
+
+    [[ "$desiredVersion" != *.* ]] || desiredVersion=$(git show-ref --tags | grep $desiredVersion$ | awk '{print $1;}')
+
+    if [ "$currentCommit" != "$desiredVersion" ]; then
+        git fetch origin --depth=1 $desiredVersion -q
+        git -c advice.detachedHead=false checkout $desiredVersion -q
     fi
 
     cd ..
@@ -99,14 +107,11 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
     curr_db=$etc_dir/speedtest.db
     last_db=$curr_db.old
     db_table="speedtest"
-    st_ver="speedtest"
-    core_ver="Pi-hole"
-    admin_ver="web"
-    org_core_ver=$core_ver
-    org_admin_ver=$admin_ver
-    mod_core_ver=$core_ver
-    mod_admin_ver=$admin_ver
+    st_ver=""
+    mod_core_ver=""
+    mod_admin_ver=""
     cleanup=true
+    aborted=0
 
     set +u
     SKIP_INSTALL=true
@@ -116,21 +121,22 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
     help() {
         echo "The Mod Script"
         echo "Usage: sudo bash /path/to/mod.sh [options]"
-        echo "  or: curl -sSLN https://github.com/arevindh/pi-hole/raw/master/advanced/Scripts/speedtestmod/mod.sh | sudo bash [-s -- options]"
+        echo "  or: curl -sSLN //link/to/mod.sh | sudo bash [-s -- options]"
         echo "(Re)install the latest release of the Speedtest Mod, and/or the following options:"
         echo ""
         echo "Options:"
-        echo "  -u, --update, up       also update Pi-hole, unless Systemd is not being used (ie. not in Docker)"
-        echo "  -b, --backup           preserve stock Pi-hole files for faster offline restore"
-        echo "  -o, --online           force online restore of stock Pi-hole files even if a backup exists"
-        echo "  -i, --install          skip restore of stock Pi-hole (for when not updating Pi-hole nor switching repos)"
-        echo "  -r, --reinstall        keep current version of the mod, if installed"
-        echo "  -t, --testing          install the latest commit"
-        echo "  -n, --uninstall, un    remove the mod and its files, but keep the database"
-        echo "  -d, --database, db     flush/restore the database if it's not/empty (and exit if this is the only arg given)"
-        echo "  -v, --version          display the version of the mod"
-        echo "  -x, --verbose          show the commands being run"
-        echo "  -h, --help             display this help message"
+        echo "  -u, --update, up        also update Pi-hole, unless Systemd is not being used (ie. not in Docker)"
+        echo "  -b, --backup            preserve stock Pi-hole files for faster offline restore"
+        echo "  -o, --online            force online restore of stock Pi-hole files even if a backup exists"
+        echo "  -i, --install           skip restore of stock Pi-hole (for when not updating Pi-hole nor switching repos)"
+        echo "  -r, --reinstall         keep current version of the mod, if installed"
+        echo "  -t, --testing           install the latest commit"
+        echo "  -n, --uninstall, un     remove the mod and its files, but keep the database"
+        echo "  -d, --database, db      flush/restore the database if it's not/empty (and exit if this is the only arg given)"
+        echo "  -v, --version           display the version of the mod"
+        echo "  -x, --verbose           show the commands being run"
+        echo "  -c, --careless          skip checking for missing dependencies"
+        echo "  -h, --help              display this help message"
         echo ""
         echo "Examples:"
         echo "  sudo bash /opt/pihole/speedtestmod/mod.sh -ubo"
@@ -179,12 +185,9 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
         if $cleanup; then
             echo "Process Aborting..."
             aborted=1
-            [ ! -z "$st_ver" ] || st_ver="speedtest"
-            [ ! -z "$core_ver" ] || core_ver="Pi-hole"
-            [ ! -z "$admin_ver" ] || admin_ver="web"
 
             if [ -d $core_dir/.git/refs/remotes/old ]; then
-                download /etc .pihole "" $core_ver
+                download /etc .pihole "" Pi-hole
                 swapScripts
 
                 if [ -d $core_dir/advanced/Scripts/speedtestmod ]; then
@@ -193,8 +196,8 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                 fi
             fi
 
-            [ -d $mod_dir ] && [ -d $mod_dir/.git/refs/remotes/old ] && download $etc_dir speedtest "" $st_ver || :
-            [ ! -d $html_dir/admin/.git/refs/remotes/old ] || download $html_dir admin "" $admin_ver
+            [ -d $mod_dir ] && [ -d $mod_dir/.git/refs/remotes/old ] && download /etc pihole-speedtest "" speedtest || :
+            [ ! -d $html_dir/admin/.git/refs/remotes/old ] || download $html_dir admin "" web
             [ -f $last_db ] && [ ! -f $curr_db ] && mv $last_db $curr_db || :
             [ -f $curr_wp ] && ! cat $curr_wp | grep -q SpeedTest && purge || :
             printf "Please try again before reporting an issue.\n\n$(date)\n"
@@ -222,12 +225,14 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
         local online=false
         local install=false
         local reinstall=false
+        local stable=true
         local uninstall=false
         local database=false
         local verbose=false
+        local chk_dep=true
         local dashes=0
-        local SHORT=-uboirtndvxh
-        local LONG=update,backup,online,install,reinstall,testing,uninstall,database,version,verbose,help
+        local SHORT=-uboirtndvxch
+        local LONG=update,backup,online,install,reinstall,testing,uninstall,database,version,verbose,careless,help
         declare -a EXTRA_ARGS
         declare -a POSITIONAL
         PARSED=$(getopt --options ${SHORT} --longoptions ${LONG} --name "$0" -- "$@")
@@ -249,6 +254,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                 exit 0
                 ;;
             -x | --verbose) verbose=true ;;
+            -c | --careless) chk_dep=false ;;
             -h | --help)
                 help
                 cleanup=false
@@ -316,13 +322,15 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                 echo "Restoring Pi-hole$($online && echo " online..." || echo "...")"
                 pihole -a -s -1
 
+                local core_ver=""
+                local admin_ver=""
                 if [ -f $mod_dir/cnf ]; then
-                    org_core_ver=$(awk -F= -v r="$core_dir" '$1 == r {print $2}' $mod_dir/cnf)
-                    org_admin_ver=$(awk -F= -v r="$html_dir/admin" '$1 == r {print $2}' $mod_dir/cnf)
+                    core_ver=$(awk -F= -v r="$core_dir" '$1 == r {print $2}' $mod_dir/cnf)
+                    admin_ver=$(awk -F= -v r="$html_dir/admin" '$1 == r {print $2}' $mod_dir/cnf)
                 fi
 
-                ! $online && restore $html_dir/admin || download $html_dir admin https://github.com/pi-hole/AdminLTE $org_admin_ver
-                ! $online && restore $core_dir || download /etc .pihole https://github.com/pi-hole/pi-hole $org_core_ver
+                ! $online && restore $html_dir/admin || download $html_dir admin https://github.com/pi-hole/AdminLTE "$admin_ver"
+                ! $online && restore $core_dir || download /etc .pihole https://github.com/pi-hole/pi-hole "$core_ver"
                 [ ! -d $mod_dir ] || rm -rf $mod_dir
                 swapScripts
             fi
@@ -340,31 +348,35 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                 echo "Purging Mod..."
                 purge
             else
-                if [ ! -f /usr/local/bin/pihole ]; then
-                    echo "Installing Pi-hole..."
-                    curl -sSL https://install.pi-hole.net | sudo bash
+                if $chk_dep; then
+                    if [ ! -f /usr/local/bin/pihole ]; then
+                        echo "Installing Pi-hole..."
+                        curl -sSL https://install.pi-hole.net | sudo bash
+                    fi
+
+                    echo "Checking Dependencies..."
+                    local PHP_VERSION=$(php -v | head -n 1 | awk '{print $2}' | cut -d "." -f 1,2)
+                    local PKG_MANAGER=$(command -v apt-get || command -v dnf || command -v yum)
+                    local PKGS=(bc sqlite3 jq tar tmux wget "php$PHP_VERSION-sqlite3")
+                    local missingPkgs=()
+
+                    for pkg in "${PKGS[@]}"; do
+                        ! notInstalled "$pkg" || missingPkgs+=("$pkg")
+                    done
+
+                    if [ ${#missingPkgs[@]} -gt 0 ]; then
+                        [[ "$PKG_MANAGER" != *"apt-get"* ]] || apt-get update >/dev/null
+                        echo "Installing Missing..."
+                        $PKG_MANAGER install -y "${missingPkgs[@]}"
+                    fi
                 fi
 
-                echo "Downloading Mod..."
-                local PHP_VERSION=$(php -v | head -n 1 | awk '{print $2}' | cut -d "." -f 1,2)
-                local PKG_MANAGER=$(command -v apt-get || command -v dnf || command -v yum)
-                local PKGS=(bc sqlite3 jq tar tmux wget "php$PHP_VERSION-sqlite3")
-                local missingPkgs=()
-
-                for pkg in "${PKGS[@]}"; do
-                    ! notInstalled "$pkg" || missingPkgs+=("$pkg")
-                done
-
-                if [ ${#missingPkgs[@]} -gt 0 ]; then
-                    [[ "$PKG_MANAGER" != *"apt-get"* ]] || apt-get update >/dev/null
-                    $PKG_MANAGER install -y "${missingPkgs[@]}" &>/dev/null
-                fi
-
-                download /etc pihole-speedtest https://github.com/arevindh/pihole-speedtest $st_ver "" $reinstall
+                echo "Swapping Repos..."
+                download /etc pihole-speedtest https://github.com/arevindh/pihole-speedtest "$st_ver" master $stable
 
                 if $backup; then
-                    download /etc .pihole.mod https://github.com/arevindh/pi-hole $mod_core_ver "" $reinstall
-                    download $html_dir admin.mod https://github.com/arevindh/AdminLTE $mod_admin_ver "" $reinstall
+                    download /etc .pihole.mod https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
+                    download $html_dir admin.mod https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
                     echo "Backing up Pi-hole..."
                 fi
 
@@ -376,7 +388,6 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     if [ -d $repo ]; then
                         stockTag=$(getTag $repo)
                         setCnf $repo $stockTag $mod_dir/cnf
-                        [ "$repo" == "$core_dir" ] && core_ver=$stockTag || admin_ver=$stockTag
 
                         if $backup; then
                             if [ ! -d $repo.bak ] || [ "$(getTag $repo.bak)" != "$stockTag" ]; then
@@ -390,12 +401,12 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     fi
                 done
 
-                $backup || download /etc .pihole https://github.com/arevindh/pi-hole $mod_core_ver "" $reinstall
+                $backup || download /etc .pihole https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
                 echo "Installing Mod..."
                 swapScripts
                 \cp -af $core_dir/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
                 pihole -a -s
-                $backup || download $html_dir admin https://github.com/arevindh/AdminLTE $mod_admin_ver "" $reinstall
+                $backup || download $html_dir admin https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
             fi
 
             pihole updatechecker

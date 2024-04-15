@@ -17,11 +17,17 @@ function get_local_branch() {
 function get_local_version() {
     # Return active version
     cd "${1}" 2> /dev/null || return 1
-    local_v=$(git tag --sort=-version:refname | head -n 1)
-    if [[ "${local_v}" == "vDev" ]]; then
-        local_v=$(git tag --sort=-version:refname | head -n 2 | tail -n 1)
+
+    local local_commit=$(git rev-parse HEAD)
+    local local_vs=$(git show-ref --tags -d | grep "$local_commit" | awk '{print $2}' | grep -o 'v.*$' | sort -V)
+
+    if [ -z "$local_vs" ]; then
+        echo "$local_commit"
+    else
+        local local_v=$(echo "$local_vs" | tail -n1)
+        [[ "$local_v" != "vDev" ]] || local_v=$(echo "$local_vs" | tail -n2 | head -n1)
+        echo "$local_v"
     fi
-    echo "${local_v}" || return 1
 }
 
 function get_local_hash() {
