@@ -50,6 +50,8 @@ download() {
         git remote rename old origin
     fi
 
+    url=$(git remote get-url origin)
+    [[ "$url" == *"ipitio"* ]] && snapToTag=$(echo "$snapToTag" | grep -q "true" && echo "false" || echo "true")
     git fetch origin --depth=1 $branch:refs/remotes/origin/$branch -q
     git reset --hard origin/"$branch" -q
     git checkout -B "$branch" -q
@@ -58,18 +60,15 @@ download() {
     local currentCommit=$(getTag "$dest")
 
     if [ -z "$desiredVersion" ]; then # if empty, get the latest version
-        url=$(git remote get-url origin)
-        [[ "$url" == *"ipitio"* ]] && snapToTag=$(echo "$snapToTag" | grep -q "true" && echo "false" || echo "true")
-
         if [ "$snapToTag" == "true" ]; then
-            local latestTag=$(git show-ref --tags | awk -F/ '{print $3}' | grep '^v[0-9]' | grep -v '\^{}' | sort -V | tail -n1)
+            local latestTag=$(git ls-remote -t "$url" | awk -F/ '{print $3}' | grep '^v[0-9]' | grep -v '\^{}' | sort -V | tail -n1)
             [ ! -z "$latestTag" ] && desiredVersion=$latestTag || desiredVersion=$currentCommit
         fi
     elif $aborting; then
         desiredVersion=$(getTag "$desiredVersion")
     fi
 
-    [[ "$desiredVersion" != *.* ]] || desiredVersion=$(git show-ref --tags | grep $desiredVersion$ | awk '{print $1;}')
+    [[ "$desiredVersion" != *.* ]] || desiredVersion=$(git ls-remote -t "$url" | grep $desiredVersion$ | awk '{print $1;}')
 
     if [ "$currentCommit" != "$desiredVersion" ]; then
         git fetch origin --depth=1 $desiredVersion -q
