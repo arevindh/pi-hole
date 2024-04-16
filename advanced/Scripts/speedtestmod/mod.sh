@@ -97,7 +97,9 @@ setCnf() {
 }
 
 getCnf() {
-    awk -F= -v r="$2" '$1 == r {print $2}' $1
+    local value=$(grep "^$2=" $1 | cut -d '=' -f 2)
+    [ -z "$value" ] && value=$(getVersion $2)
+    echo $value
 }
 
 # allow to source the above helper functions without running the whole script
