@@ -57,20 +57,21 @@ download() {
     git reset --hard origin/"$branch" -q
     git checkout -B "$branch" -q
     local currentVersion=$(getVersion "$dest")
-    [[ "$currentVersion" != *.* ]] || currentVersion=$(git ls-remote -t "$url" | grep $currentVersion$ | awk '{print $1;}')
+    local tags=$(git ls-remote -t "$url")
+    [[ "$currentVersion" != *.* ]] || currentVersion=$(echo "$tags" | grep $currentVersion$ | awk '{print $1;}')
 
     if [ -z "$desiredVersion" ]; then # if empty, get the latest version
         if [ "$snapToTag" == "true" ]; then
-            local latestTag=$(git ls-remote -t "$url" | awk -F/ '{print $3}' | grep '^v[0-9]' | grep -v '\^{}' | sort -V | tail -n1)
+            local latestTag=$(echo "$tags" | awk -F/ '{print $3}' | grep '^v[0-9]' | grep -v '\^{}' | sort -V | tail -n1)
             [ ! -z "$latestTag" ] && desiredVersion=$latestTag || desiredVersion=$currentVersion
         fi
     elif $aborting; then
         desiredVersion=$(getVersion "$desiredVersion")
     fi
 
-    [[ "$desiredVersion" != *.* ]] || desiredVersion=$(git ls-remote -t "$url" | grep $desiredVersion$ | awk '{print $1;}')
+    [[ "$desiredVersion" != *.* ]] || desiredVersion=$(echo "$tags" | grep $desiredVersion$ | awk '{print $1;}')
 
-    if [ "$currentVersion" != "$desiredVersion" ]; then
+    if [ ! -z "$desiredVersion" ] && [ "$currentVersion" != "$desiredVersion" ]; then
         git fetch origin --depth=1 $desiredVersion -q
         git -c advice.detachedHead=false checkout $desiredVersion -q
     fi
