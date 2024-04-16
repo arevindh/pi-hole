@@ -8,9 +8,6 @@
 # This file is copyright under the latest version of the EUPL.
 # Please see LICENSE file for your rights under this license.
 
-SKIP_MOD=true
-source /opt/pihole/speedtestmod/mod.sh
-
 function get_local_branch() {
     # Return active branch
     cd "${1}" 2> /dev/null || return 1
@@ -20,7 +17,10 @@ function get_local_branch() {
 function get_local_version() {
     # Return active version
     cd "${1}" 2> /dev/null || return 1
-    getCnf /etc/pihole-speedtest/cnf mod-$1
+    local tags=$(git ls-remote -t origin)
+    local foundVersion=$(git rev-parse HEAD 2>/dev/null)
+    ! grep -q "$foundVersion" <<<"$tags" || foundVersion=$(grep "$foundVersion" <<<"$tags" | awk '{print $2;}' | cut -d '/' -f 3 | sort -V | tail -n1)
+    echo "${foundVersion}"
 }
 
 function get_local_hash() {
@@ -29,7 +29,7 @@ function get_local_hash() {
 }
 
 function get_remote_version() {
-    if [[ "${1}" == "docker-pi-hole" ]]; then
+    if [ "${1}" == "docker-pi-hole" ] || [ "${1}" == "FTL" ]; then
         curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1
     else
         curl -s "https://api.github.com/repos/arevindh/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || { curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1; }
@@ -104,10 +104,10 @@ if [[ "${INSTALL_WEB_INTERFACE}" == true ]]; then
     WEB_HASH="$(get_local_hash /var/www/html/admin)"
     addOrEditKeyValPair "${VERSION_FILE}" "WEB_HASH" "${WEB_HASH}"
 
-    GITHUB_WEB_VERSION="$(get_remote_version web)"
+    GITHUB_WEB_VERSION="$(get_remote_version AdminLTE)"
     addOrEditKeyValPair "${VERSION_FILE}" "GITHUB_WEB_VERSION" "${GITHUB_WEB_VERSION}"
 
-    GITHUB_WEB_HASH="$(get_remote_hash web "${WEB_BRANCH}")"
+    GITHUB_WEB_HASH="$(get_remote_hash AdminLTE "${WEB_BRANCH}")"
     addOrEditKeyValPair "${VERSION_FILE}" "GITHUB_WEB_HASH" "${GITHUB_WEB_HASH}"
 
 fi
