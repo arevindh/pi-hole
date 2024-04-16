@@ -82,8 +82,11 @@ download() {
         grep -q "$desiredVersion$" <<<"$tags" && desiredVersion=$(grep "$desiredVersion$" <<<"$tags" | awk '{print $1;}') || desiredVersion=$currentVersion
     fi
 
-    git fetch origin --depth=1 $desiredVersion -q
-    git -c advice.detachedHead=false checkout $desiredVersion -q
+    if [ "$(git rev-parse HEAD)" != "$desiredVersion" ]; then
+        git fetch origin --depth=1 $desiredVersion -q
+        git reset --hard $desiredVersion -q
+    fi
+
     cd ..
 }
 
