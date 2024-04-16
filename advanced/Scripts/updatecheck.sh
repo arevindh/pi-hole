@@ -11,7 +11,8 @@
 function get_local_branch() {
     # Return active branch
     cd "${1}" 2> /dev/null || return 1
-    git rev-parse --abbrev-ref HEAD || return 1
+    local foundBranch=$(git show-ref --heads | grep "$(git rev-parse HEAD)" | awk '{print $2;}' | cut -d '/' -f 3)
+    echo "${foundBranch:-HEAD}"
 }
 
 function get_local_version() {
@@ -35,7 +36,6 @@ function get_remote_version() {
         curl -s "https://api.github.com/repos/arevindh/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || { curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1; }
     fi
 }
-
 
 function get_remote_hash(){
     git ls-remote "https://github.com/arevindh/${1}" --tags "${2}" | awk '{print substr($0, 0,8);}' || { git ls-remote "https://github.com/pi-hole/${1}" --tags "${2}" | awk '{print substr($0, 0,8);}' || return 1; }
