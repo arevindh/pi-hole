@@ -31,7 +31,7 @@ download() {
     cd "$dest"
     git config --global --add safe.directory "$dest"
 
-    if [ ! -z "$desiredVersion" ]; then
+    if [ ! -z "$desiredVersion" ] && [[ "$desiredVersion" != *.* ]]; then
         local repos=("Pi-hole" "web" "speedtest")
 
         for repo in "${repos[@]}"; do
@@ -98,7 +98,7 @@ setCnf() {
 
 getCnf() {
     local value=$(grep "^$2=" $1 | cut -d '=' -f 2)
-    [ -z "$value" ] && value=$(getVersion $(echo $2 | sed 's/^mod-//;s/^org-//'))
+    [ ! -z "$value" ] || value=$(getVersion $(echo $2 | sed 's/^mod-//;s/^org-//'))
     echo $value
 }
 
