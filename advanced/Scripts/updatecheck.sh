@@ -8,6 +8,9 @@
 # This file is copyright under the latest version of the EUPL.
 # Please see LICENSE file for your rights under this license.
 
+SKIP_MOD=true
+source /opt/pihole/speedtestmod/mod.sh
+
 function get_local_branch() {
     # Return active branch
     cd "${1}" 2> /dev/null || return 1
@@ -17,17 +20,7 @@ function get_local_branch() {
 function get_local_version() {
     # Return active version
     cd "${1}" 2> /dev/null || return 1
-
-    local local_commit=$(git rev-parse HEAD)
-    local local_vs=$(git show-ref --tags -d | grep "$local_commit" | awk '{print $2}' | grep -o 'v.*$' | sort -V)
-
-    if [ -z "$local_vs" ]; then
-        echo "$local_commit"
-    else
-        local local_v=$(echo "$local_vs" | tail -n1)
-        [[ "$local_v" != "vDev" ]] || local_v=$(echo "$local_vs" | tail -n2 | head -n1)
-        echo "$local_v"
-    fi
+    getCnf /etc/pihole-speedtest/cnf mod-$1
 }
 
 function get_local_hash() {

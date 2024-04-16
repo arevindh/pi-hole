@@ -1,18 +1,19 @@
 #!/bin/bash
 
-getTag() {
-    local foundCommit=""
+getVersion() {
+    local foundVersion=""
 
     if [ -d $1 ]; then
         cd $1
-        foundCommit=$(git rev-parse HEAD 2>/dev/null)
+        foundVersion=$(git tag --points-at)
+        [ -z "$foundVersion" ] && foundVersion=$(git rev-parse HEAD 2>/dev/null) || foundVersion=$(echo "$foundVersion" | sort -V | tail -n1)
         cd - &>/dev/null
     elif [ -x "$(command -v pihole)" ]; then
-        foundCommit=$(pihole -v | grep "$1" | cut -d ' ' -f 6)
-        [ "$foundCommit" != "HEAD" ] && [ "$foundCommit" != "$(git rev-parse --abbrev-ref HEAD)" ] || foundCommit=$(pihole -v | grep "$1" | cut -d ' ' -f 7)
+        foundVersion=$(pihole -v | grep "$1" | cut -d ' ' -f 6)
+        [ "$foundVersion" != "HEAD" ] && [ "$foundVersion" != "$(git rev-parse --abbrev-ref HEAD)" ] || foundVersion=$(pihole -v | grep "$1" | cut -d ' ' -f 7)
     fi
 
-    echo $foundCommit
+    echo $foundVersion
 }
 
 download() {
@@ -55,20 +56,21 @@ download() {
     git fetch origin --depth=1 $branch:refs/remotes/origin/$branch -q
     git reset --hard origin/"$branch" -q
     git checkout -B "$branch" -q
-    local currentCommit=$(getTag "$dest")
+    local currentVersion=$(getVersion "$dest")
+    [[ "$currentVersion" != *.* ]] || currentVersion=$(git ls-remote -t "$url" | grep $currentVersion$ | awk '{print $1;}')
 
     if [ -z "$desiredVersion" ]; then # if empty, get the latest version
         if [ "$snapToTag" == "true" ]; then
             local latestTag=$(git ls-remote -t "$url" | awk -F/ '{print $3}' | grep '^v[0-9]' | grep -v '\^{}' | sort -V | tail -n1)
-            [ ! -z "$latestTag" ] && desiredVersion=$latestTag || desiredVersion=$currentCommit
+            [ ! -z "$latestTag" ] && desiredVersion=$latestTag || desiredVersion=$currentVersion
         fi
     elif $aborting; then
-        desiredVersion=$(getTag "$desiredVersion")
+        desiredVersion=$(getVersion "$desiredVersion")
     fi
 
     [[ "$desiredVersion" != *.* ]] || desiredVersion=$(git ls-remote -t "$url" | grep $desiredVersion$ | awk '{print $1;}')
 
-    if [ "$currentCommit" != "$desiredVersion" ]; then
+    if [ "$currentVersion" != "$desiredVersion" ]; then
         git fetch origin --depth=1 $desiredVersion -q
         git -c advice.detachedHead=false checkout $desiredVersion -q
     fi
@@ -90,7 +92,12 @@ notInstalled() {
 }
 
 setCnf() {
-    grep -q "^$1=" $3 && sed -i "s|^$1=.*|$1=$2|" $3 || echo "$1=$2" >>$3
+    grep -q "^$1=" $3 || echo "$1=$2" >>$3
+    [ "${4:-false}" == "true" ] || sed -i "s|^$1=.*|$1=$2|" $3
+}
+
+getCnf() {
+    awk -F= -v r="$2" '$1 == r {print $2}' $1
 }
 
 # allow to source the above helper functions without running the whole script
@@ -246,7 +253,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
             -n | --uninstall) uninstall=true ;;
             -d | --database) database=true ;;
             -v | --version)
-                getTag $mod_dir
+                getVersion $mod_dir
                 cleanup=false
                 exit 0
                 ;;
@@ -311,9 +318,9 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
             if [ -f $curr_wp ] && cat $curr_wp | grep -q SpeedTest; then
                 if $reinstall; then
                     echo "Reinstalling Mod..."
-                    mod_core_ver=$(getTag 'Pi-hole')
-                    mod_admin_ver=$(getTag 'web')
-                    st_ver=$(getTag 'speedtest')
+                    mod_core_ver=$(getCnf $mod_dir/cnf mod-$core_dir)
+                    mod_admin_ver=$(getCnf $mod_dir/cnf mod-$html_dir/admin)
+                    st_ver=$(getCnf $mod_dir/cnf mod-$mod_dir)
                 fi
 
                 if ! $install; then
@@ -323,8 +330,8 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     local core_ver=""
                     local admin_ver=""
                     if [ -f $mod_dir/cnf ]; then
-                        core_ver=$(awk -F= -v r="$core_dir" '$1 == r {print $2}' $mod_dir/cnf)
-                        admin_ver=$(awk -F= -v r="$html_dir/admin" '$1 == r {print $2}' $mod_dir/cnf)
+                        core_ver=$(getCnf $mod_dir/cnf org-$core_dir)
+                        admin_ver=$(getCnf $mod_dir/cnf org-$html_dir/admin)
                     fi
 
                     ! $online && restore $html_dir/admin || download $html_dir admin https://github.com/pi-hole/AdminLTE "$admin_ver"
@@ -372,6 +379,8 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
 
                 echo "Swapping Repos..."
                 download /etc pihole-speedtest https://github.com/arevindh/pihole-speedtest "$st_ver" master $stable
+                [ -f $mod_dir/cnf ] || touch $mod_dir/cnf
+                setCnf mod-$mod_dir "$(getVersion $mod_dir)" $mod_dir/cnf $reinstall
 
                 if $backup; then
                     download /etc .pihole.mod https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
@@ -379,17 +388,13 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     echo "Backing up Pi-hole..."
                 fi
 
-                local stockTag=$(getTag $mod_dir)
-                [ -f $mod_dir/cnf ] || touch $mod_dir/cnf
-                setCnf $mod_dir $stockTag $mod_dir/cnf
-
                 for repo in $core_dir $html_dir/admin; do
                     if [ -d $repo ]; then
-                        stockTag=$(getTag $repo)
-                        setCnf $repo $stockTag $mod_dir/cnf
+                        local stockTag=$(getVersion $repo)
+                        setCnf org-$repo $stockTag $mod_dir/cnf
 
                         if $backup; then
-                            if [ ! -d $repo.bak ] || [ "$(getTag $repo.bak)" != "$stockTag" ]; then
+                            if [ ! -d $repo.bak ] || [ "$(getVersion $repo.bak)" != "$stockTag" ]; then
                                 rm -rf $repo.bak
                                 mv -f $repo $repo.bak
                             fi
@@ -406,6 +411,8 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                 \cp -af $core_dir/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
                 pihole -a -s
                 $backup || download $html_dir admin https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
+                setCnf mod-$core_dir "$(getVersion $core_dir)" $mod_dir/cnf $reinstall
+                setCnf mod-$html_dir/admin "$(getVersion $html_dir/admin)" $mod_dir/cnf $reinstall
             fi
 
             pihole updatechecker
