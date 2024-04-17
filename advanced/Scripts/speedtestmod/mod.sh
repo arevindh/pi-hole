@@ -5,18 +5,23 @@ getVersion() {
 
     if [ -d $1 ]; then
         cd $1
-        local tags=$(git ls-remote -t origin)
-        foundVersion=$(git rev-parse HEAD 2>/dev/null)
+        foundVersion=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}')
 
         if [ -z "${2:-}" ]; then
-            ! grep -q "$foundVersion" <<<"$tags" || foundVersion=$(grep "$foundVersion" <<<"$tags" | awk '{print $2;}' | cut -d '/' -f 3 | sort -V | tail -n1)
+            local tags=$(git ls-remote -t origin)
+            local foundTag=$foundVersion
+            ! grep -q "$foundVersion" <<<"$tags" || foundTag=$(grep "$foundVersion" <<<"$tags" | awk '{print $2;}' | cut -d '/' -f 3 | sort -V | tail -n1)
+            [ -z "$foundTag" ] || foundVersion=$foundTag
         fi
 
         cd - &>/dev/null
     elif [ -x "$(command -v pihole)" ]; then
         local versions=$(pihole -v | grep "$1")
         foundVersion=$(cut -d ' ' -f 6 <<<"$versions")
-        [ "$foundVersion" != "HEAD" ] && [ "$foundVersion" != "$(git rev-parse --abbrev-ref HEAD)" ] || foundVersion=$(cut -d ' ' -f 7 <<<"$versions")
+
+        if [[ "$foundVersion" != *.* ]]; then
+            [ "$foundVersion" != "$(git rev-parse --abbrev-ref HEAD)" ] || foundVersion=$(cut -d ' ' -f 7 <<<"$versions")
+        fi
     fi
 
     echo $foundVersion
@@ -62,27 +67,23 @@ download() {
     git fetch origin --depth=1 $branch:refs/remotes/origin/$branch -q
     git reset --hard origin/"$branch" -q
     git checkout -B "$branch" -q
-    local currentVersion=$(getVersion "$dest")
+    local currentHash=$(getVersion "$dest" hash)
     local tags=$(git ls-remote -t origin)
-
-    if [[ "$currentVersion" == *.* ]]; then
-        grep -q "$currentVersion$" <<<"$tags" && currentVersion=$(grep "$currentVersion$" <<<"$tags" | awk '{print $1;}') || $currentVersion $(git rev-parse origin/$branch)
-    fi
 
     if [ -z "$desiredVersion" ]; then # if empty, get the latest version
         if [ "$snapToTag" == "true" ]; then
             local latestTag=$(awk -F/ '{print $3}' <<<"$tags" | grep '^v[0-9]' | grep -v '\^{}' | sort -V | tail -n1)
-            [ ! -z "$latestTag" ] && desiredVersion=$latestTag || desiredVersion=$currentVersion
+            [ ! -z "$latestTag" ] && desiredVersion=$latestTag || desiredVersion=$currentHash
         fi
     elif $aborting; then
-        desiredVersion=$(getVersion "$desiredVersion")
+        desiredVersion=$(getVersion "$desiredVersion" hash)
     fi
 
     if [[ "$desiredVersion" == *.* ]]; then
-        grep -q "$desiredVersion$" <<<"$tags" && desiredVersion=$(grep "$desiredVersion$" <<<"$tags" | awk '{print $1;}') || desiredVersion=$currentVersion
+        grep -q "$desiredVersion$" <<<"$tags" && desiredVersion=$(grep "$desiredVersion$" <<<"$tags" | awk '{print $1;}') || desiredVersion=$currentHash
     fi
 
-    if [ "$(git rev-parse HEAD)" != "$desiredVersion" ]; then
+    if [ "$currentHash" != "$desiredVersion" ]; then
         git fetch origin --depth=1 $desiredVersion -q
         git reset --hard $desiredVersion -q
     fi
@@ -146,32 +147,36 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
     set -u
 
     help() {
-        echo "The Mod Script"
-        echo "Usage: sudo bash /path/to/mod.sh [options]"
-        echo "  or: curl -sSLN //link/to/mod.sh | sudo bash [-s -- options]"
-        echo "(Re)install the latest release of the Speedtest Mod, and/or the following options:"
-        echo ""
-        echo "Options:"
-        echo "  -u, --update, up        also update Pi-hole, unless Systemd is not being used (ie. not in Docker)"
-        echo "  -b, --backup            preserve stock Pi-hole files for faster offline restore"
-        echo "  -o, --online            force online restore of stock Pi-hole files even if a backup exists"
-        echo "  -i, --install           skip restore of stock Pi-hole*"
-        echo "  -r, --reinstall         keep current version of the mod, if installed*"
-        echo "  -t, --testing           install the latest commit"
-        echo "  -n, --uninstall, un     remove the mod and its files, but keep the database"
-        echo "  -d, --database, db      flush/restore the database if it's not/empty (and exit if this is the only arg given)"
-        echo "  -v, --version           display the version of the mod"
-        echo "  -x, --verbose           show the commands being run"
-        echo "  -c, --careless          skip check for missing dependencies"
-        echo "  -h, --help              display this help message"
-        echo ""
-        echo "  *for when not updating Pi-hole nor switching repos"
-        echo ""
-        echo "Examples:"
-        echo "  sudo bash /opt/pihole/speedtestmod/mod.sh -ubo"
-        echo "  sudo bash /opt/pihole/speedtestmod/mod.sh -i -r -d"
-        echo "  sudo bash /opt/pihole/speedtestmod/mod.sh --uninstall"
-        echo "  curl -sSLN https://github.com/arevindh/pi-hole/raw/master/advanced/Scripts/speedtestmod/mod.sh | sudo bash -s -- -u"
+        local helpText=(
+            "The Mod Script"
+            "Usage: sudo bash /path/to/mod.sh [options]"
+            "  or: curl -sSLN //link/to/mod.sh | sudo bash [-s -- options]"
+            "(Re)install the latest release of the Speedtest Mod, and/or the following options:"
+            ""
+            "Options:"
+            "  -u, --update,    up      also update Pi-hole, unless Systemd is not being used (ie. not in Docker)"
+            "  -b, --backup             preserve stock Pi-hole files for faster offline restore"
+            "  -o, --online             force online restore of stock Pi-hole files even if a backup exists"
+            "  -i, --install            skip restore of stock Pi-hole*"
+            "  -r, --reinstall          keep current version of the mod, if installed*"
+            "  -t, --testing            install the latest commit"
+            "  -n, --uninstall, un      remove the mod and its files, but keep the database"
+            "  -d, --database,  db      flush/restore the database if it's not/empty (and exit if this is the only arg given)"
+            "  -v, --version            display the version of the mod"
+            "  -x, --verbose            show the commands being run"
+            "  -c, --continuous         skip check for missing dependencies"
+            "  -h, --help               display this help message"
+            ""
+            "  *for when not updating Pi-hole nor switching repos"
+            ""
+            "Examples:"
+            "  sudo bash /opt/pihole/speedtestmod/mod.sh -ubo"
+            "  sudo bash /opt/pihole/speedtestmod/mod.sh -i -r -d"
+            "  sudo bash /opt/pihole/speedtestmod/mod.sh --uninstall"
+            "  curl -sSLN https://github.com/arevindh/pi-hole/raw/master/advanced/Scripts/speedtestmod/mod.sh | sudo bash -s -- -u"
+        )
+
+        printf "%s\n" "${helpText[@]}"
     }
 
     isEmpty() {
@@ -261,7 +266,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
         local chk_dep=true
         local dashes=0
         local SHORT=-uboirtndvxch
-        local LONG=update,backup,online,install,reinstall,testing,uninstall,database,version,verbose,careless,help
+        local LONG=update,backup,online,install,reinstall,testing,uninstall,database,version,verbose,continuous,help
         declare -a EXTRA_ARGS
         declare -a POSITIONAL
         PARSED=$(getopt --options ${SHORT} --longoptions ${LONG} --name "$0" -- "$@")
@@ -283,7 +288,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                 exit 0
                 ;;
             -x | --verbose) verbose=true ;;
-            -c | --careless) chk_dep=false ;;
+            -c | --continuous) chk_dep=false ;;
             -h | --help)
                 help
                 cleanup=false
@@ -342,11 +347,18 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
 
             if [ -f $curr_wp ] && cat $curr_wp | grep -q SpeedTest; then
                 if $reinstall; then
-                    # if hashes of current and stored versions are the same, use stored version, else use the current version
-                    # since versions could be tags or commit hashes, and commits can have multiple tags
-                    [ "$(getVersion $core_dir hash)" == "$(getCnf $mod_dir/cnf mod-$core_dir hash)" ] && mod_core_ver=$(getCnf $mod_dir/cnf mod-$core_dir) || mod_core_ver=$(getVersion $core_dir)
-                    [ "$(getVersion $html_dir/admin hash)" == "$(getCnf $mod_dir/cnf mod-$html_dir/admin hash)" ] && mod_admin_ver=$(getCnf $mod_dir/cnf mod-$html_dir/admin) || mod_admin_ver=$(getVersion $html_dir/admin)
-                    [ "$(getVersion $mod_dir hash)" == "$(getCnf $mod_dir/cnf mod-$mod_dir hash)" ] && st_ver=$(getCnf $mod_dir/cnf mod-$mod_dir) || st_ver=$(getVersion $mod_dir)
+                    for repo in $core_dir $html_dir/admin $mod_dir; do
+                        if [ -d $repo ]; then
+                            local hashTag=$(getVersion $repo) # if hashes are the same, we may be on an older tag
+                            [ "$(getVersion $repo hash)" != "$(getCnf $mod_dir/cnf mod-$repo hash)" ] || hashTag=$(getCnf $mod_dir/cnf mod-$repo)
+
+                            case "$repo" in
+                            "$core_dir") mod_core_ver=$hashTag ;;
+                            "$html_dir/admin") mod_admin_ver=$hashTag ;;
+                            "$mod_dir") st_ver=$hashTag ;;
+                            esac
+                        fi
+                    done
                 fi
 
                 if ! $install; then
@@ -403,16 +415,16 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     fi
                 fi
 
-                echo "Patching Repos..."
+                if $backup; then
+                    echo "Backing up Pi-hole..."
+                    download /etc .pihole.mod https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
+                    download $html_dir admin.mod https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
+                fi
+
+                $reinstall && echo "Reinstalling Mod..." || echo "Installing Mod..."
                 download /etc pihole-speedtest https://github.com/arevindh/pihole-speedtest "$st_ver" master $stable
                 [ -f $mod_dir/cnf ] || touch $mod_dir/cnf
                 setCnf mod-$mod_dir "$(getVersion $mod_dir)" $mod_dir/cnf $reinstall
-
-                if $backup; then
-                    download /etc .pihole.mod https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
-                    download $html_dir admin.mod https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
-                    echo "Backing up Pi-hole..."
-                fi
 
                 for repo in $core_dir $html_dir/admin; do
                     if [ -d $repo ]; then
@@ -432,7 +444,6 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                 done
 
                 $backup || download /etc .pihole https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
-                $reinstall && echo "Reinstalling Mod..." || echo "Installing Mod..."
                 swapScripts
                 \cp -af $core_dir/advanced/Scripts/speedtestmod/. $opt_dir/speedtestmod/
                 pihole -a -s
