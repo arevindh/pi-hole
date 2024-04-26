@@ -437,7 +437,7 @@ ProcessDHCPSettings() {
         interface="${PIHOLE_INTERFACE}"
 
         # Use eth0 as fallback interface
-        if [ -z "${interface}" ]; then
+        if [ -z ${interface} ]; then
             interface="eth0"
         fi
 
