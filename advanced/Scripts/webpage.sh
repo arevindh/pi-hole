@@ -24,7 +24,6 @@ readonly gravityDBfile="/etc/pihole/gravity.db"
 # speedtest mod
 readonly speedtestmod="/opt/pihole/speedtestmod/mod.sh"
 readonly speedtestfile="/opt/pihole/speedtestmod/speedtest.sh"
-readonly speedtestdb="/etc/pihole/speedtest.db"
 
 readonly setupVars="/etc/pihole/setupVars.conf"
 readonly PI_HOLE_BIN_DIR="/usr/local/bin"
@@ -438,7 +437,7 @@ ProcessDHCPSettings() {
         interface="${PIHOLE_INTERFACE}"
 
         # Use eth0 as fallback interface
-        if [ -z ${interface} ]; then
+        if [ -z "${interface}" ]; then
             interface="eth0"
         fi
 
@@ -548,44 +547,52 @@ SetWebUILayout() {
 
 generate_systemd_calendar() {
     local interval_hours="$1"
-    local total_seconds=$(echo "$interval_hours * 3600" | bc)
+    local total_seconds
+    total_seconds=$(echo "$interval_hours * 3600" | bc)
     local freq_entries=()
 
-    if (( $(echo "$total_seconds < 60" | bc -l) )); then # less than a minute
+    if (($(echo "$total_seconds < 60" | bc -l))); then # less than a minute
         total_seconds=60
         addOrEditKeyValPair "${setupVars}" "SPEEDTESTSCHEDULE" "0.017"
     fi
-    if (( $(echo "$total_seconds >= 60 && $total_seconds < 3600" | bc -l) )); then # less than an hour
-        local minute_interval=$(echo "$total_seconds / 60" | bc)
+    if (($(echo "$total_seconds >= 60 && $total_seconds < 3600" | bc -l))); then # less than an hour
+        local minute_interval
+        minute_interval=$(echo "$total_seconds / 60" | bc)
         freq_entries+=("*-*-* *:00/$minute_interval:00")
-    elif (( $(echo "$total_seconds == 3600" | bc -l) )); then # exactly an hour
+    elif (($(echo "$total_seconds == 3600" | bc -l))); then # exactly an hour
         freq_entries+=("*-*-* *:00:00")
-    elif (( $(echo "$total_seconds < 86400" | bc -l) )); then # less than a day
-        if (( $(awk "BEGIN {print ($total_seconds / 3600) % 1}") == 0 )); then # divides evenly into an hour
-            local hour_interval=$(echo "$total_seconds / 3600" | bc)
+    elif (($(echo "$total_seconds < 86400" | bc -l))); then                  # less than a day
+        if (($(awk "BEGIN {print ($total_seconds / 3600) % 1}") == 0)); then # divides evenly into an hour
+            local hour_interval
+            hour_interval=$(echo "$total_seconds / 3600" | bc)
             freq_entries+=("*-*-* 00/$hour_interval:00:00")
         else # does not divide evenly into an hour
             local current_second=0
-            while (( $(echo "$current_second < 86400" | bc -l) )); do
-                local hour=$(echo "$current_second / 3600" | bc)
-                local minute=$(awk "BEGIN {print ($current_second % 3600) / 60}")
+            while (($(echo "$current_second < 86400" | bc -l))); do
+                local hour
+                hour=$(echo "$current_second / 3600" | bc)
+                local minute
+                minute=$(awk "BEGIN {print ($current_second % 3600) / 60}")
                 hour=${hour%.*}
                 minute=${minute%.*}
-                freq_entries+=("*-*-* $(printf "%02d:%02d:00" $hour $minute)")
+                freq_entries+=("*-*-* $(printf "%02d:%02d:00" "$hour" "$minute")")
                 current_second=$(echo "$current_second + $total_seconds" | bc)
             done
         fi
     else # more than a day
-        local full_days=$(echo "$interval_hours / 24" | bc)
-        local remaining_hours=$(echo "$interval_hours - ($full_days * 24)" | bc)
-        if (( $(echo "$full_days > 0" | bc -l) )); then
-            freq_entries+=("*-*-1/$(printf "%02.0f" $full_days)")
+        local full_days
+        full_days=$(echo "$interval_hours / 24" | bc)
+        local remaining_hours
+        remaining_hours=$(echo "$interval_hours - ($full_days * 24)" | bc)
+        if (($(echo "$full_days > 0" | bc -l))); then
+            freq_entries+=("*-*-1/$(printf "%02.0f" "$full_days")")
         fi
-        if (( $(echo "$remaining_hours > 0" | bc -l) )); then # partial day
-            local remaining_minutes=$(echo "($remaining_hours - ($remaining_hours / 1)) * 60" | bc)
+        if (($(echo "$remaining_hours > 0" | bc -l))); then # partial day
+            local remaining_minutes
+            remaining_minutes=$(echo "($remaining_hours - ($remaining_hours / 1)) * 60" | bc)
             remaining_hours=${remaining_hours%.*}
             remaining_minutes=${remaining_minutes%.*}
-            freq_entries+=("*-*-* $(printf "%02d:%02d:00" $remaining_hours $remaining_minutes)")
+            freq_entries+=("*-*-* $(printf "%02d:%02d:00" "$remaining_hours" "$remaining_minutes")")
         fi
     fi
 
@@ -597,14 +604,15 @@ generate_cron_schedule() {
     local total_seconds="nan"
     local schedule_script="/opt/pihole/speedtestmod/schedule_check.sh"
 
-    if [[ "$1" != "nan" ]] && [[ "$1" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]] && (( $(echo "$1 > 0" | bc -l) )); then
+    if [[ "$1" != "nan" ]] && [[ "$1" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]] && (($(echo "$1 > 0" | bc -l))); then
         total_seconds=$(echo "$1 * 3600" | bc)
-        if (( $(echo "$total_seconds < 60" | bc -l) )); then
+        if (($(echo "$total_seconds < 60" | bc -l))); then
             total_seconds=60
         fi
 
-        local remainder=$(awk "BEGIN {print $total_seconds % 60}")
-        if (( $(echo "$remainder < 30" | bc -l) )); then
+        local remainder
+        remainder=$(awk "BEGIN {print $total_seconds % 60}")
+        if (($(echo "$remainder < 30" | bc -l))); then
             total_seconds=$(echo "$total_seconds - $remainder" | bc -l)
         else
             total_seconds=$(echo "$total_seconds + (60 - $remainder)" | bc -l)
@@ -613,50 +621,58 @@ generate_cron_schedule() {
     fi
 
     [ -d /opt/pihole/speedtestmod ] || return
-    sudo bash -c "cat > $(printf %q "$schedule_script")" << EOF
+    sudo bash -c "cat > $(printf %q "$schedule_script")" <<EOF
 #!/bin/bash
-# Schedule script to handle complex cron schedules
-last_run_file="/etc/pihole/last_speedtest"
-interval_seconds=$total_seconds
+#
+# The Cron Script, Speedtest Mod for Pi-hole Job Scheduler
+# Don't run this script manually; it's called by cron
+#
+
+declare -r LAST_RUN_FILE="/etc/pihole/last_speedtest"
+declare -r INTERVAL_SECONDS=$total_seconds
+declare schedule
+declare current_time
 schedule=\$(grep "SPEEDTESTSCHEDULE" "$setupVars" | cut -f2 -d"=")
+current_time=\$(date +%s)
 
 # if schedule is set and interval is "nan", set the speedtest interval to the schedule
-if [[ "\$interval_seconds" == "nan" ]]; then
-    if [[ "\${schedule-}" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; then
-        /usr/local/bin/pihole -a -s "\$schedule"
-    fi
-
+if [[ "\$INTERVAL_SECONDS" == "nan" ]]; then
+    [[ ! "\${schedule:-}" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]] || /usr/local/bin/pihole -a -s "\$schedule"
     exit 0
 fi
 
-if (( \$(echo "\$interval_seconds <= 0" | bc -l) )); then
-    exit 0
-fi
+(( \$(echo "\$INTERVAL_SECONDS > 0" | bc -l) )) || exit 0
 
-if [[ -f "\$last_run_file" ]]; then
-    last_run=\$(cat "\$last_run_file")
+if [[ -f "\$LAST_RUN_FILE" ]]; then
+    declare last_run
+    last_run=\$(<"\$LAST_RUN_FILE")
     current_time=\$(date +%s)
-    if (( \$(echo "\$current_time - \$last_run < \$interval_seconds" | bc -l) )); then
-        exit 0
-    fi
+    (( \$(echo "\$current_time - \$last_run >= \$INTERVAL_SECONDS" | bc -l) )) || exit 0
 fi
 
-echo \$(date +%s) > "\$last_run_file"
-cat $speedtestfile | sudo bash
+[[ \$(/usr/bin/tmux list-sessions 2>/dev/null | grep -c pimodtest) -eq 0 ]] || exit 0
+echo "\$current_time" > "\$LAST_RUN_FILE"
+/usr/bin/tmux new-session -d -s pimodtest "sudo bash $speedtestfile"
 EOF
     sudo chmod +x "$schedule_script"
 
     crontab -l 2>/dev/null | grep -v "$schedule_script" | crontab -
-    if [[ "$total_seconds" == "nan" ]] || (( $(echo "$total_seconds > 0" | bc -l) )); then
-        crontab -l &> /dev/null || crontab -l 2>/dev/null | { cat; echo ""; } | crontab -
-        (crontab -l; echo "* * * * * /bin/bash $schedule_script") | crontab -
+    if [[ "$total_seconds" == "nan" ]] || (($(echo "$total_seconds > 0" | bc -l))); then
+        crontab -l &>/dev/null || crontab -l 2>/dev/null | {
+            cat
+            echo ""
+        } | crontab -
+        (
+            crontab -l
+            echo "* * * * * /bin/bash $schedule_script"
+        ) | crontab -
     fi
 }
 
 ChangeSpeedTestSchedule() {
     local interval="${args[2]%\.}"
     if [[ "${interval-}" =~ ^-?([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; then
-        if (( $(echo "$interval < 0" | bc -l) )); then
+        if (($(echo "$interval < 0" | bc -l))); then
             interval="0"
         else
             addOrEditKeyValPair "${setupVars}" "SPEEDTESTSCHEDULE" "$interval"
@@ -671,9 +687,10 @@ ChangeSpeedTestSchedule() {
     if [[ ! -d /run/systemd/system ]]; then
         generate_cron_schedule "$interval"
     elif [[ "$interval" == "0" ]] || [[ "$interval" == "nan" ]]; then
-        systemctl disable --now pihole-speedtest.timer &> /dev/null
+        systemctl disable --now pihole-speedtest.timer &>/dev/null
     else
-        local freq=$(generate_systemd_calendar "$interval")
+        local freq
+        freq=$(generate_systemd_calendar "$interval")
         sudo bash -c 'cat > /etc/systemd/system/pihole-speedtest.service << EOF
 [Unit]
 Description=Pi-hole Speedtest
@@ -699,10 +716,10 @@ Persistent=true
 EOF'
         while IFS= read -r line; do
             sudo bash -c "echo 'OnCalendar=$line' >> /etc/systemd/system/pihole-speedtest.timer"
-        done <<< "$freq"
+        done <<<"$freq"
 
         systemctl daemon-reload
-        systemctl reenable pihole-speedtest.timer &> /dev/null
+        systemctl reenable pihole-speedtest.timer &>/dev/null
         systemctl restart pihole-speedtest.timer
     fi
 }
@@ -733,25 +750,35 @@ SpeedtestServer() {
 }
 
 RunSpeedtestNow() {
-    if [[ $(tmux list-sessions 2>/dev/null | grep -c pimod) -eq 0 ]]; then
-        tmux new-session -d -s pimod "cat $speedtestfile | sudo bash"
-    fi
+    # if there is a running session, wait for it to finish
+    # if the session is still running after 5 minutes, kill it
+    while [[ $(tmux list-sessions 2>/dev/null | grep -c pimodtest) -gt 0 ]]; do
+        sleep 1
+        ((counter++))
+
+        if [[ $counter -gt 300 ]]; then
+            tmux kill-session -t pimodtest
+            break
+        fi
+    done
+
+    tmux new-session -d -s pimodtest "sudo bash $speedtestfile"
 }
 
 ReinstallSpeedTest() {
-    tmux new-session -d -s pimod "cat $speedtestmod | sudo bash"
+    tmux new-session -d -s pimod "sudo bash $speedtestmod"
 }
 
 UpdateSpeedTest() {
-    tmux new-session -d -s pimod "cat $speedtestmod | sudo bash -s -- up ${args[2]} ${args[3]}"
+    tmux new-session -d -s pimod "sudo bash $speedtestmod up ${args[2]} ${args[3]}"
 }
 
 UninstallSpeedTest() {
-    tmux new-session -d -s pimod "cat $speedtestmod | sudo bash -s -- un ${args[2]}"
+    tmux new-session -d -s pimod "sudo bash $speedtestmod un ${args[2]}"
 }
 
 ClearSpeedtestData() {
-    tmux new-session -d -s pimod "cat $speedtestmod | sudo bash -s -- db"
+    tmux new-session -d -s pimod "sudo bash $speedtestmod db"
 }
 
 SetWebUITheme() {

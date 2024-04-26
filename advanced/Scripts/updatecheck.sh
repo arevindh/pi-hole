@@ -11,28 +11,32 @@
 function get_local_branch() {
     # Return active branch
     cd "${1}" 2> /dev/null || return 1
-    local foundBranch=$(git status --porcelain=2 -b | grep branch.head | awk '{print $3;}')
+    local foundBranch
+    foundBranch=$(git status --porcelain=2 -b | grep branch.head | awk '{print $3;}')
     echo "${foundBranch:-HEAD}"
 }
 
 function get_local_version() {
     # Return active version
     cd "${1}" 2> /dev/null || return 1
-    local tags=$(git ls-remote -t origin)
-    local foundVersion=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}' | cut -c1-8)
+    local tags
+    local foundVersion
+    tags=$(git ls-remote -t origin)
+    foundVersion=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}')
     local foundTag=$foundVersion
+    # shellcheck disable=SC2015
     grep -q "^$foundVersion" <<<"$tags" && foundTag=$(grep "^$foundVersion.*/v[0-9].*$" <<<"$tags" | awk '{print $2;}' | cut -d '/' -f 3 | sort -V | tail -n1) || :
-    [ -z "${foundTag}" ] || foundVersion="${foundTag}"
+    [[ -z "${foundTag}" ]] || foundVersion="${foundTag}"
     echo "${foundVersion}"
 }
 
 function get_local_hash() {
     cd "${1}" 2> /dev/null || return 1
-    git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}' | cut -c1-8 || return 1
+    git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}' || return 1
 }
 
 function get_remote_version() {
-    if [ "${1}" == "docker-pi-hole" ] || [ "${1}" == "FTL" ]; then
+    if [[ "${1}" == "docker-pi-hole" || "${1}" == "FTL" ]]; then
         curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1
     else
         curl -s "https://api.github.com/repos/arevindh/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || { curl -s "https://api.github.com/repos/pi-hole/${1}/releases/latest" 2> /dev/null | jq --raw-output .tag_name || return 1; }
@@ -43,11 +47,11 @@ function get_remote_hash(){
     local foundHash=""
 
     for repo in "arevindh" "pi-hole" "ipitio"; do
-        foundHash=$(git ls-remote "https://github.com/${repo}/${1}" --tags "${2}" | awk '{print $1;}' | cut -c1-8 2> /dev/null)
-        [ -n "${foundHash}" ] && break
+        foundHash=$(git ls-remote "https://github.com/${repo}/${1}" --tags "${2}" | awk '{print $1;}' 2> /dev/null)
+        [[ -n "${foundHash}" ]] && break
     done
 
-    [ ! -z "${foundHash}" ] && echo "${foundHash}" || return 1
+    [[ -n "${foundHash}" ]] && echo "${foundHash}" || return 1
 }
 
 # Source the setupvars config file
