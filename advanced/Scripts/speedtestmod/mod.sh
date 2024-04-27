@@ -480,7 +480,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
 
         readonly update backup online install reinstall stable uninstall database verbose chk_dep cleanup
         trap '[ "$?" -eq "0" ] && commit || abort' EXIT
-        printf "%s\n\nRunning The Mod Script by @ipitio...\n" "$(date)"
+        printf "%s\n\nRunning the Mod Script by @ipitio...\n" "$(date)"
         ! $verbose || set -x
 
         if $database; then
@@ -590,7 +590,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
 
                 if $backup; then
                     echo "Backing up Pi-hole..."
-                    download /etc .pihole.mod https://github.com/ipitio/pi-hole "$mod_core_ver" master $stable
+                    download /etc .pihole.mod https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
                     download $HTML_DIR admin.mod https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
                 fi
 
@@ -617,7 +617,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     fi
                 done
 
-                $backup || download /etc .pihole https://github.com/ipitio/pi-hole "$mod_core_ver" master $stable
+                $backup || download /etc .pihole https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
                 swapScripts
                 \cp -af $CORE_DIR/advanced/Scripts/speedtestmod/. $OPT_DIR/speedtestmod/
                 pihole -a -s
