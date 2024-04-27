@@ -26,7 +26,7 @@ getVersion() {
         if [[ -z "${2:-}" ]]; then
             local tags
             local found_tag=$found_version
-            tags=$(git ls-remote -t origin)
+            tags=$(git ls-remote -t origin || git tag -l)
             ! grep -q "$found_version" <<<"$tags" || found_tag=$(grep "$found_version" <<<"$tags" | awk '{print $2;}' | cut -d '/' -f 3 | sort -V | tail -n1)
             [[ -z "$found_tag" ]] || found_version=$found_tag
         fi
