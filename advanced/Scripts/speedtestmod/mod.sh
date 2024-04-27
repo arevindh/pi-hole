@@ -574,7 +574,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
 
                     readonly missingpkgs
                     if [[ ${#missingpkgs[@]} -gt 0 ]]; then
-                        if [[ "$pkg_manager" == *"apt-get"* ]] && apt-cache show "${missingpkgs[@]}" 2>&1 | grep -q "Unable to locate package\|No package"; then
+                        if [[ "$pkg_manager" == *"apt-get"* ]] && apt-cache show "${missingpkgs[@]}" 2>&1 | grep -qE "Unable to locate package|No package"; then
                             echo "Updating Package Cache..."
                             apt-get update -y &>/dev/null
                         fi
