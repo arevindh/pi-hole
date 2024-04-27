@@ -347,7 +347,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
     #   The changes reverted
     # shellcheck disable=SC2317 ###########
     abort() {
-        if $cleanup; then
+        if $cleanup && [[ $aborted -eq 0 ]]; then
             echo "Process Aborting..."
             aborted=1
 
@@ -544,6 +544,15 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     ! $online && restore $CORE_DIR || download /etc .pihole https://github.com/pi-hole/pi-hole "$core_ver"
                     [[ ! -d $MOD_DIR ]] || rm -rf $MOD_DIR
                     swapScripts
+
+                    if $update; then
+                        for repo in $HTML_DIR/admin; do
+                            pushd "$repo" &>/dev/null || exit 1
+                            git tag -l | xargs git tag -d >/dev/null 2>&1
+                            git fetch --tags -f -q
+                            popd &>/dev/null
+                        done
+                    fi
                 fi
             fi
 
