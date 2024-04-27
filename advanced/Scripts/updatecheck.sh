@@ -21,7 +21,7 @@ function get_local_version() {
     cd "${1}" 2> /dev/null || return 1
     local tags
     local foundVersion
-    tags=$(git ls-remote -t origin)
+    tags=$(git ls-remote -t origin || git show-ref --tags)
     foundVersion=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}')
     local foundTag=$foundVersion
     # shellcheck disable=SC2015
