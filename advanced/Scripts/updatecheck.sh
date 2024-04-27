@@ -12,7 +12,8 @@ function get_local_branch() {
     # Return active branch
     cd "${1}" 2> /dev/null || return 1
     local foundBranch
-    foundBranch=$(git status --porcelain=2 -b | grep branch.head | awk '{print $3;}' || git show-ref --heads | grep "$(git rev-parse HEAD)" | awk '{print $2;}' | cut -d '/' -f 3)
+    foundBranch=$(git status --porcelain=2 -b | grep branch.head | awk '{print $3;}')
+    [[ $foundBranch != "*(*" ]] || foundBranch=$(git show-ref --heads | grep "$(git rev-parse HEAD)" | awk '{print $2;}' | cut -d '/' -f 3)
     echo "${foundBranch:-HEAD}"
 }
 
@@ -22,7 +23,8 @@ function get_local_version() {
     local tags
     local foundVersion
     tags=$(git ls-remote -t origin || git show-ref --tags)
-    foundVersion=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}' || git rev-parse HEAD 2>/dev/null)
+    foundVersion=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}')
+    [[ $foundVersion != "*(*" ]] || foundVersion=$(git rev-parse HEAD 2>/dev/null)
     local foundTag=$foundVersion
     # shellcheck disable=SC2015
     grep -q "^$foundVersion" <<<"$tags" && foundTag=$(grep "^$foundVersion.*/v[0-9].*$" <<<"$tags" | awk '{print $2;}' | cut -d '/' -f 3 | sort -V | tail -n1) || :
@@ -32,7 +34,9 @@ function get_local_version() {
 
 function get_local_hash() {
     cd "${1}" 2> /dev/null || return 1
-    git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}' || { git rev-parse HEAD 2>/dev/null || return 1; }
+    foundHash=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}')
+    [[ $foundHash != "*(*" ]] || foundHash=$(git rev-parse HEAD 2>/dev/null)
+    echo "${foundHash}"
 }
 
 function get_remote_version() {

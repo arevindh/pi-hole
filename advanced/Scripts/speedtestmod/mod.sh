@@ -21,7 +21,8 @@ getVersion() {
 
     if [[ -d "$1" ]]; then
         pushd "$1" &>/dev/null || exit 1
-        found_version=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}' || git rev-parse HEAD)
+        found_version=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}')
+        [[ $found_version != "*(*" ]] || found_version=$(git rev-parse HEAD 2>/dev/null)
 
         if [[ -z "${2:-}" ]]; then
             local tags
@@ -38,7 +39,10 @@ getVersion() {
         found_version=$(cut -d ' ' -f 6 <<<"$versions")
 
         if [[ "$found_version" != *.* ]]; then
-            [[ "$found_version" != "$(git status --porcelain=2 -b | grep branch.head | awk '{print $3;}' || git show-ref --heads | grep "$(git rev-parse HEAD)" | awk '{print $2;}' | cut -d '/' -f 3)" ]] || found_version=$(cut -d ' ' -f 7 <<<"$versions")
+            local found_branch
+            found_branch="$(git status --porcelain=2 -b | grep branch.head | awk '{print $3;}')"
+            [[ $found_branch != "*(*" ]] || found_branch=$(git show-ref --heads | grep "$(git rev-parse HEAD)" | awk '{print $2;}' | cut -d '/' -f 3)
+            [[ "$found_version" != "$found_branch" ]] || found_version=$(cut -d ' ' -f 7 <<<"$versions")
         fi
     fi
 
