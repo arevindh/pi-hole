@@ -581,7 +581,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                         echo "Installing Missing Dependencies..."
                         if ! $pkg_manager install -y "${missingpkgs[@]}" &>/dev/null; then
                             [[ "$pkg_manager" == *"apt-get"* ]] || exit 1
-                            echo "...And Updating Package Cache..."
+                            echo "And Updating Package Cache..."
                             $pkg_manager update -y &>/dev/null
                             $pkg_manager install -y "${missingpkgs[@]}" &>/dev/null
                         fi
