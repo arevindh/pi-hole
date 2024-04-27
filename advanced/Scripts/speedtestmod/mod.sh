@@ -574,13 +574,13 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
 
                     readonly missingpkgs
                     if [[ ${#missingpkgs[@]} -gt 0 ]]; then
-                        if [[ "$pkg_manager" == *"apt-get"* ]] && apt-cache show "${missingpkgs[@]}" 2>&1 | grep -qE "Unable to locate package|No package"; then
-                            echo "Updating Package Cache..."
-                            apt-get update -y &>/dev/null
-                        fi
-
                         echo "Installing Missing Dependencies..."
-                        $pkg_manager install -y "${missingpkgs[@]}" &>/dev/null # hide an unimportant warning in docker
+                        if ! $pkg_manager install -y "${missingpkgs[@]}" &>/dev/null; then
+                            [[ "$pkg_manager" == *"apt-get"* ]] || exit 1
+                            echo "...And Updating Package Cache..."
+                            $pkg_manager update -y &>/dev/null
+                            $pkg_manager install -y "${missingpkgs[@]}" &>/dev/null
+                        fi
                     fi
                 fi
 
