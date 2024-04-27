@@ -545,8 +545,8 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     [[ ! -d $MOD_DIR ]] || rm -rf $MOD_DIR
                     swapScripts
 
-                    if $update; then
-                        for repo in $HTML_DIR/admin; do
+                    if $update || $uninstall; then
+                        for repo in $CORE_DIR $HTML_DIR/admin; do
                             pushd "$repo" &>/dev/null || exit 1
                             git tag -l | xargs git tag -d >/dev/null 2>&1
                             git fetch --tags -f -q
