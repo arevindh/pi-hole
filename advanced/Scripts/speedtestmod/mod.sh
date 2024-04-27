@@ -21,7 +21,7 @@ getVersion() {
 
     if [[ -d "$1" ]]; then
         pushd "$1" &>/dev/null || exit 1
-        found_version=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}')
+        found_version=$(git status --porcelain=2 -b | grep branch.oid | awk '{print $3;}' || git rev-parse HEAD)
 
         if [[ -z "${2:-}" ]]; then
             local tags
@@ -38,7 +38,7 @@ getVersion() {
         found_version=$(cut -d ' ' -f 6 <<<"$versions")
 
         if [[ "$found_version" != *.* ]]; then
-            [[ "$found_version" != "$(git status --porcelain=2 -b | grep branch.head | awk '{print $3;}')" ]] || found_version=$(cut -d ' ' -f 7 <<<"$versions")
+            [[ "$found_version" != "$(git status --porcelain=2 -b | grep branch.head | awk '{print $3;}' || git show-ref --heads | grep "$(git rev-parse HEAD)" | awk '{print $2;}' | cut -d '/' -f 3)" ]] || found_version=$(cut -d ' ' -f 7 <<<"$versions")
         fi
     fi
 
@@ -586,7 +586,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
 
                 if $backup; then
                     echo "Backing up Pi-hole..."
-                    download /etc .pihole.mod https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
+                    download /etc .pihole.mod https://github.com/ipitio/pi-hole "$mod_core_ver" master $stable
                     download $HTML_DIR admin.mod https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
                 fi
 
@@ -613,7 +613,7 @@ if [[ "${SKIP_MOD:-}" != true ]]; then
                     fi
                 done
 
-                $backup || download /etc .pihole https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
+                $backup || download /etc .pihole https://github.com/ipitio/pi-hole "$mod_core_ver" master $stable
                 swapScripts
                 \cp -af $CORE_DIR/advanced/Scripts/speedtestmod/. $OPT_DIR/speedtestmod/
                 pihole -a -s
