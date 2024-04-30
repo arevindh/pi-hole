@@ -545,132 +545,9 @@ SetWebUILayout() {
     addOrEditKeyValPair "${setupVars}" "WEBUIBOXEDLAYOUT" "${args[2]}"
 }
 
-generate_systemd_calendar() {
-    local interval_hours="$1"
-    local total_seconds
-    total_seconds=$(echo "$interval_hours * 3600" | bc)
-    local freq_entries=()
-
-    if (($(echo "$total_seconds < 60" | bc -l))); then # less than a minute
-        total_seconds=60
-        addOrEditKeyValPair "${setupVars}" "SPEEDTESTSCHEDULE" "0.017"
-    fi
-    if (($(echo "$total_seconds >= 60 && $total_seconds < 3600" | bc -l))); then # less than an hour
-        local minute_interval
-        minute_interval=$(echo "$total_seconds / 60" | bc)
-        freq_entries+=("*-*-* *:00/$minute_interval:00")
-    elif (($(echo "$total_seconds == 3600" | bc -l))); then # exactly an hour
-        freq_entries+=("*-*-* *:00:00")
-    elif (($(echo "$total_seconds < 86400" | bc -l))); then                  # less than a day
-        if (($(awk "BEGIN {print ($total_seconds / 3600) % 1}") == 0)); then # divides evenly into an hour
-            local hour_interval
-            hour_interval=$(echo "$total_seconds / 3600" | bc)
-            freq_entries+=("*-*-* 00/$hour_interval:00:00")
-        else # does not divide evenly into an hour
-            local current_second=0
-            while (($(echo "$current_second < 86400" | bc -l))); do
-                local hour
-                hour=$(echo "$current_second / 3600" | bc)
-                local minute
-                minute=$(awk "BEGIN {print ($current_second % 3600) / 60}")
-                hour=${hour%.*}
-                minute=${minute%.*}
-                freq_entries+=("*-*-* $(printf "%02d:%02d:00" "$hour" "$minute")")
-                current_second=$(echo "$current_second + $total_seconds" | bc)
-            done
-        fi
-    else # more than a day
-        local full_days
-        full_days=$(echo "$interval_hours / 24" | bc)
-        local remaining_hours
-        remaining_hours=$(echo "$interval_hours - ($full_days * 24)" | bc)
-        if (($(echo "$full_days > 0" | bc -l))); then
-            freq_entries+=("*-*-1/$(printf "%02.0f" "$full_days")")
-        fi
-        if (($(echo "$remaining_hours > 0" | bc -l))); then # partial day
-            local remaining_minutes
-            remaining_minutes=$(echo "($remaining_hours - ($remaining_hours / 1)) * 60" | bc)
-            remaining_hours=${remaining_hours%.*}
-            remaining_minutes=${remaining_minutes%.*}
-            freq_entries+=("*-*-* $(printf "%02d:%02d:00" "$remaining_hours" "$remaining_minutes")")
-        fi
-    fi
-
-    local IFS=$'\n'
-    echo "${freq_entries[*]}"
-}
-
-generate_cron_schedule() {
-    local total_seconds="nan"
-    local schedule_script="/opt/pihole/speedtestmod/schedule_check.sh"
-
-    if [[ "$1" != "nan" ]] && [[ "$1" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]] && (($(echo "$1 > 0" | bc -l))); then
-        total_seconds=$(echo "$1 * 3600" | bc)
-        if (($(echo "$total_seconds < 60" | bc -l))); then
-            total_seconds=60
-        fi
-
-        local remainder
-        remainder=$(awk "BEGIN {print $total_seconds % 60}")
-        if (($(echo "$remainder < 30" | bc -l))); then
-            total_seconds=$(echo "$total_seconds - $remainder" | bc -l)
-        else
-            total_seconds=$(echo "$total_seconds + (60 - $remainder)" | bc -l)
-        fi
-        addOrEditKeyValPair "${setupVars}" "SPEEDTESTSCHEDULE" "$(echo "scale=3; $total_seconds / 3600" | bc)"
-    fi
-
-    [ -d /opt/pihole/speedtestmod ] || return
-    sudo bash -c "cat > $(printf %q "$schedule_script")" <<EOF
-#!/bin/bash
-#
-# The Cron Script, Speedtest Mod for Pi-hole Job Scheduler
-# Don't run this script manually; it's called by cron
-#
-
-declare -r LAST_RUN_FILE="/etc/pihole/last_speedtest"
-declare -r INTERVAL_SECONDS=$total_seconds
-declare schedule
-declare current_time
-schedule=\$(grep "SPEEDTESTSCHEDULE" "$setupVars" | cut -f2 -d"=")
-current_time=\$(date +%s)
-
-# if schedule is set and interval is "nan", set the speedtest interval to the schedule
-if [[ "\$INTERVAL_SECONDS" == "nan" ]]; then
-    [[ ! "\${schedule:-}" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]] || /usr/local/bin/pihole -a -s "\$schedule"
-    exit 0
-fi
-
-(( \$(echo "\$INTERVAL_SECONDS > 0" | bc -l) )) || exit 0
-
-if [[ -f "\$LAST_RUN_FILE" ]]; then
-    declare last_run
-    last_run=\$(<"\$LAST_RUN_FILE")
-    current_time=\$(date +%s)
-    (( \$(echo "\$current_time - \$last_run >= \$INTERVAL_SECONDS" | bc -l) )) || exit 0
-fi
-
-[[ \$(/usr/bin/tmux list-sessions 2>/dev/null | grep -c pimodtest) -eq 0 ]] || exit 0
-echo "\$current_time" > "\$LAST_RUN_FILE"
-/usr/bin/tmux new-session -d -s pimodtest "sudo bash $speedtestfile"
-EOF
-    sudo chmod +x "$schedule_script"
-
-    crontab -l 2>/dev/null | grep -v "$schedule_script" | crontab -
-    if [[ "$total_seconds" == "nan" ]] || (($(echo "$total_seconds > 0" | bc -l))); then
-        crontab -l &>/dev/null || crontab -l 2>/dev/null | {
-            cat
-            echo ""
-        } | crontab -
-        (
-            crontab -l
-            echo "* * * * * /bin/bash $schedule_script"
-        ) | crontab -
-    fi
-}
-
 ChangeSpeedTestSchedule() {
     local interval="${args[2]%\.}"
+
     if [[ "${interval-}" =~ ^-?([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; then
         if (($(echo "$interval < 0" | bc -l))); then
             interval="0"
@@ -679,74 +556,39 @@ ChangeSpeedTestSchedule() {
         fi
     else
         interval=$(grep "SPEEDTESTSCHEDULE" "${setupVars}" | cut -f2 -d"=")
+
         if [[ ! "${interval-}" =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; then
             interval="nan"
         fi
     fi
 
     if [[ ! -d /run/systemd/system ]]; then
-        generate_cron_schedule "$interval"
+        # shellcheck disable=SC1091
+        source "/opt/pihole/speedtestmod/lib.sh"
+        generate_cron_job "$interval"
     elif [[ "$interval" == "0" ]] || [[ "$interval" == "nan" ]]; then
         systemctl disable --now pihole-speedtest.timer &>/dev/null
     else
-        local freq
-        freq=$(generate_systemd_calendar "$interval")
-        sudo bash -c 'cat > /etc/systemd/system/pihole-speedtest.service << EOF
-[Unit]
-Description=Pi-hole Speedtest
-After=network.target
-
-[Service]
-User=root
-Type=oneshot
-ExecStart=/opt/pihole/speedtestmod/speedtest.sh
-
-[Install]
-WantedBy=multi-user.target
-EOF'
-        sudo bash -c 'cat > /etc/systemd/system/pihole-speedtest.timer << EOF
-[Unit]
-Description=Pi-hole Speedtest Timer
-
-[Install]
-WantedBy=timers.target
-
-[Timer]
-Persistent=true
-EOF'
-        while IFS= read -r line; do
-            sudo bash -c "echo 'OnCalendar=$line' >> /etc/systemd/system/pihole-speedtest.timer"
-        done <<<"$freq"
-
-        systemctl daemon-reload
-        systemctl reenable pihole-speedtest.timer &>/dev/null
-        systemctl restart pihole-speedtest.timer
+        # shellcheck disable=SC1091
+        source "/opt/pihole/speedtestmod/lib.sh"
+        generate_systemd_service "$interval"
     fi
 }
 
 UpdateSpeedTestRange() {
-    if [[ "${args[2]}" =~ ^-?[0-9]+$ ]]; then
-        if [[ "${args[2]}" -ge -1 ]]; then
-            addOrEditKeyValPair "${setupVars}" "SPEEDTEST_CHART_DAYS" "${args[2]}"
-        fi
-    fi
+    [[ ! "${args[2]}" =~ ^-?[0-9]+$ || "${args[2]}" -lt -1 ]] || addOrEditKeyValPair "${setupVars}" "SPEEDTEST_CHART_DAYS" "${args[2]}"
 }
 
 UpdateSpeedTestChartType() {
-    if [[ "${args[2]}" =~ ^(bar|line)$ ]]; then
-        addOrEditKeyValPair "${setupVars}" "SPEEDTEST_CHART_TYPE" "${args[2]}"
-    else
-        addOrEditKeyValPair "${setupVars}" "SPEEDTEST_CHART_TYPE" "line"
-    fi
+    local chart_type="line"
+    [[ ! "${args[2]}" =~ ^(bar|line)$ ]] || chart_type="${args[2]}"
+    addOrEditKeyValPair "${setupVars}" "SPEEDTEST_CHART_TYPE" "$chart_type"
 }
 
 SpeedtestServer() {
-    if [[ "${args[2]}" =~ ^[0-9]+$ ]]; then
-        addOrEditKeyValPair "${setupVars}" "SPEEDTEST_SERVER" "${args[2]}"
-    else
-        # Autoselect for invalid data
-        addOrEditKeyValPair "${setupVars}" "SPEEDTEST_SERVER" ""
-    fi
+    local test_server=""
+    [[ ! "${args[2]}" =~ ^[0-9]+$ ]] || test_server="${args[2]}"
+    addOrEditKeyValPair "${setupVars}" "SPEEDTEST_SERVER" "$test_server"
 }
 
 RunSpeedtestNow() {

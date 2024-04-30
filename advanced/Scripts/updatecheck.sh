@@ -51,6 +51,7 @@ function get_remote_hash(){
     local foundHash=""
 
     for repo in "arevindh" "pi-hole" "ipitio"; do
+        [[ "${repo}" != "pi-hole" || "${1}" != "pihole-speedtest" ]] || continue
         foundHash=$(git ls-remote "https://github.com/${repo}/${1}" --tags "${2}" | awk '{print $1;}' 2> /dev/null)
         [[ -z "${foundHash}" ]] || break
     done
