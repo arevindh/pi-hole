@@ -506,7 +506,7 @@ EOF
                 fi
             done
 
-            $backup || download /etc .pihole https://github.com/arevindh/pi-hole "$mod_core_ver" arevindh $stable
+            $backup || download /etc .pihole https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
             swapScripts
             \cp -af $CORE_DIR/advanced/Scripts/speedtestmod/. $OPT_DIR/speedtestmod/
             pihole -a -s
