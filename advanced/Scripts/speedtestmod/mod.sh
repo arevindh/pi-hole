@@ -25,7 +25,7 @@ SKIP_INSTALL=true
 # shellcheck disable=SC1091
 source "$CORE_DIR/automated install/basic-install.sh"
 # shellcheck disable=SC1090,SC1091
-[[ -f "$OPT_DIR/speedtestmod/lib.sh" ]] && source "$OPT_DIR/speedtestmod/lib.sh" || source <(curl -sSLN https://github.com/ipitio/pi-hole/raw/ipitio/advanced/Scripts/speedtestmod/lib.sh)
+[[ -f "$OPT_DIR/speedtestmod/lib.sh" ]] && source "$OPT_DIR/speedtestmod/lib.sh" || source <(curl -sSLN https://github.com/arevindh/pi-hole/raw/master/advanced/Scripts/speedtestmod/lib.sh)
 
 #######################################
 # Display the help message
@@ -466,8 +466,8 @@ EOF
                     local -r installed_admin_ver=$(getVersion "web")
                     if [[ "$installed_core_ver" == *.* && "$installed_admin_ver" == *.* ]]; then
                         echo "Finding Latest Compatible Versions..."
-                        mod_core_ver=$(git ls-remote "https://github.com/ipitio/pi-hole" | grep -q "$installed_core_ver" && git ls-remote "https://github.com/ipitio/pi-hole" | grep "$installed_core_ver" | awk '{print $2;}' | cut -d '/' -f 3 | sort -Vr | head -n1 || echo "")
-                        mod_admin_ver=$(git ls-remote "https://github.com/ipitio/AdminLTE" | grep -q "$installed_admin_ver" && git ls-remote "https://github.com/ipitio/AdminLTE" | grep "$installed_admin_ver" | awk '{print $2;}' | cut -d '/' -f 3 | sort -Vr | head -n1 || echo "")
+                        mod_core_ver=$(git ls-remote "https://github.com/arevindh/pi-hole" | grep -q "$installed_core_ver" && git ls-remote "https://github.com/arevindh/pi-hole" | grep "$installed_core_ver" | awk '{print $2;}' | cut -d '/' -f 3 | sort -Vr | head -n1 || echo "")
+                        mod_admin_ver=$(git ls-remote "https://github.com/arevindh/AdminLTE" | grep -q "$installed_admin_ver" && git ls-remote "https://github.com/arevindh/AdminLTE" | grep "$installed_admin_ver" | awk '{print $2;}' | cut -d '/' -f 3 | sort -Vr | head -n1 || echo "")
                     fi
                 fi
             elif [[ -d /run/systemd/system ]]; then
@@ -479,8 +479,8 @@ EOF
 
             if $backup; then
                 echo "Creating Backup..."
-                download /etc .pihole.mod https://github.com/ipitio/pi-hole "$mod_core_ver" ipitio $stable
-                download $HTML_DIR admin.mod https://github.com/ipitio/AdminLTE "$mod_admin_ver" master $stable
+                download /etc .pihole.mod https://github.com/arevindh/pi-hole "$mod_core_ver" master $stable
+                download $HTML_DIR admin.mod https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
             fi
 
             $reinstall && echo "Reinstalling Mod..." || echo "Installing Mod..."
@@ -506,11 +506,11 @@ EOF
                 fi
             done
 
-            $backup || download /etc .pihole https://github.com/ipitio/pi-hole "$mod_core_ver" ipitio $stable
+            $backup || download /etc .pihole https://github.com/arevindh/pi-hole "$mod_core_ver" arevindh $stable
             swapScripts
             \cp -af $CORE_DIR/advanced/Scripts/speedtestmod/. $OPT_DIR/speedtestmod/
             pihole -a -s
-            $backup || download $HTML_DIR admin https://github.com/ipitio/AdminLTE "$mod_admin_ver" master $stable
+            $backup || download $HTML_DIR admin https://github.com/arevindh/AdminLTE "$mod_admin_ver" master $stable
             setCnf mod-$CORE_DIR "$(getVersion $CORE_DIR)" $MOD_DIR/cnf $reinstall
             setCnf mod-$HTML_DIR/admin "$(getVersion $HTML_DIR/admin)" $MOD_DIR/cnf $reinstall
         fi
