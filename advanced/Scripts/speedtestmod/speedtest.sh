@@ -6,9 +6,9 @@
 # shellcheck disable=SC2015
 #
 
-# shellcheck disable=SC1091
-source /opt/pihole/speedtestmod/lib.sh
-
+declare -r MOD_REPO="arevindh"
+declare -r CORE_BRANCH="master"
+declare -r OPT_DIR="/opt/pihole"
 declare -r OUT_FILE=/tmp/speedtest.log
 declare -r CREATE_TABLE="create table if not exists speedtest (
 id integer primary key autoincrement,
@@ -24,11 +24,14 @@ upload real,
 share_url text
 );"
 declare START
-declare SERVER_ID
 START=$(date -u --rfc-3339='seconds')
-SERVER_ID=$(grep 'SPEEDTEST_SERVER' "/etc/pihole/setupVars.conf" | cut -d '=' -f2)
-readonly START SERVER_ID
-declare -i run_status=0
+readonly START
+serverid=$(grep 'SPEEDTEST_SERVER' "/etc/pihole/setupVars.conf" | cut -d '=' -f2)
+run_status=$(mktemp)
+database="/etc/pihole/speedtest.db"
+echo "0" >"$run_status"
+# shellcheck disable=SC1090,SC1091
+[[ -f "$OPT_DIR/speedtestmod/lib.sh" ]] && source "$OPT_DIR/speedtestmod/lib.sh" || source <(curl -sSLN https://github.com/"$MOD_REPO"/pi-hole/raw/"$CORE_BRANCH"/advanced/Scripts/speedtestmod/lib.sh)
 
 #######################################
 # Display the help message
@@ -41,14 +44,25 @@ declare -i run_status=0
 #######################################
 help() {
     local -r help_text=(
-        "Usage: $0 [options]"
-        ""
+        "The Test Script"
+        "Usage: sudo bash /path/to/speedtest.sh [options]"
+        "  or: curl -sSLN //link/to/speedtest.sh | sudo bash [-s -- options]"
+        "  or: pihole -a -sn [options]"
         "Run the speedtest"
         ""
         "Options:"
+        "  -s, --server=<id>        Speedtest server id"
+        "  -l, --list               List all speedtest servers"
+        "  -o, --output=<file>      Sqlite3 database (default: /etc/pihole/speedtest.db)"
         "  -a, --attempts=<number>  Number of attempts (default: 3)"
         "  -x, --verbose            Show the commands being run"
         "  -h, --help               Display this help message"
+        ""
+        "Examples:"
+        "  pihole -a -sn -a 1"
+        "  sudo bash /opt/pihole/speedtestmod/speedtest.sh"
+        "  curl -sSL https://github.com/$MOD_REPO/pihole-speedtest/raw/$CORE_BRANCH/test | sudo bash"
+        "  curl -sSLN https://github.com/$MOD_REPO/pi-hole/raw/$CORE_BRANCH/advanced/Scripts/speedtestmod/speedtest.sh | sudo bash -s -- --verbose"
     )
 
     printf "%s\n" "${help_text[@]}"
@@ -58,7 +72,7 @@ help() {
 #######################################
 # Run the speedtest
 # Globals:
-#   SERVER_ID
+#   serverid
 # Arguments:
 #   None
 # Outputs:
@@ -66,9 +80,9 @@ help() {
 #######################################
 speedtest() {
     if /usr/bin/speedtest --version | grep -q "official"; then
-        [[ -n "${SERVER_ID}" ]] && /usr/bin/speedtest -s "$SERVER_ID" --accept-gdpr --accept-license -f json || /usr/bin/speedtest --accept-gdpr --accept-license -f json
+        [[ -n "${serverid}" ]] && /usr/bin/speedtest -s "$serverid" --accept-gdpr --accept-license -f json || /usr/bin/speedtest --accept-gdpr --accept-license -f json
     else
-        [[ -n "${SERVER_ID}" ]] && /usr/bin/speedtest --server "$SERVER_ID" --json --share --secure || /usr/bin/speedtest --json --share --secure
+        [[ -n "${serverid}" ]] && /usr/bin/speedtest --server "$serverid" --json --share --secure || /usr/bin/speedtest --json --share --secure
     fi
 }
 
@@ -154,7 +168,7 @@ run() {
             run $1 $((${2:-0} + 1))
         fi
     else
-        echo "Limit Reached!"
+        echo "Timeout!"
     fi
 
     local -r rm_empty="
@@ -167,10 +181,14 @@ run() {
     jq "$rm_empty" "$json_file" >"$temp_file" && mv -f "$temp_file" "$json_file"
     rm -f "$temp_file"
     chmod 644 /tmp/speedtest_results
-    mv -f /tmp/speedtest_results /var/log/pihole/speedtest.log
-    \cp -af /var/log/pihole/speedtest.log /etc/pihole/speedtest.log
-    sqlite3 /etc/pihole/speedtest.db "$CREATE_TABLE"
-    sqlite3 /etc/pihole/speedtest.db "insert into speedtest values (NULL, '${START}', '${stop}', '${isp}', '${from_ip}', '${server_name}', ${server_dist}, ${server_ping}, ${download}, ${upload}, '${share_url}');"
+
+    if [[ -f /usr/local/bin/pihole ]]; then
+        mv -f /tmp/speedtest_results /var/log/pihole/speedtest.log
+        \cp -af /var/log/pihole/speedtest.log /etc/pihole/speedtest.log
+    fi
+
+    sqlite3 "$database" "$CREATE_TABLE"
+    sqlite3 "$database" "insert into speedtest values (NULL, '${START}', '${stop}', '${isp}', '${from_ip}', '${server_name}', ${server_dist}, ${server_ping}, ${download}, ${upload}, '${share_url}');"
     [[ "$isp" == "No Internet" ]] && return 1 || return 0
 }
 
@@ -184,8 +202,8 @@ run() {
 #   The speedtest status
 #######################################
 main() {
-    local -r short_opts=-a:xh
-    local -r long_opts=attempts:,verbose,help
+    local -r short_opts=-s:lo:a:xh
+    local -r long_opts=server:,list,output:,attempts:,verbose,help
     local -r parsed_opts=$(getopt --options ${short_opts} --longoptions ${long_opts} --name "$0" -- "$@")
     local POSITIONAL=()
     local attempts="3"
@@ -194,6 +212,18 @@ main() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+        -s | --server)
+            serverid="$2"
+            shift
+            ;;
+        -l | --list)
+            /usr/bin/speedtest --version | grep -q official && sudo /usr/bin/speedtest -L || /usr/bin/speedtest --secure --list 2>&1
+            exit 0
+            ;;
+        -o | --output)
+            database="$2"
+            shift
+            ;;
         -a | --attempts)
             attempts="$2"
             shift
@@ -209,7 +239,7 @@ main() {
     [[ "$attempts" =~ ^[0-9]+$ ]] || attempts="3"
     ! $verbose || set -x
     run $attempts
-    run_status=$?
+    echo "$?" >"$run_status"
 }
 
 if [[ $EUID != 0 ]]; then
@@ -221,4 +251,6 @@ rm -f "$OUT_FILE"
 touch "$OUT_FILE"
 main "$@" 2>&1 | tee -a "$OUT_FILE"
 mv -f "$OUT_FILE" /var/log/pihole/speedtest-run.log || rm -f "$OUT_FILE"
-exit $run_status
+exit_code=$(<"$run_status")
+rm -f "$run_status"
+[[ "$exit_code" -eq 1 ]] && exit 1 || exit 0

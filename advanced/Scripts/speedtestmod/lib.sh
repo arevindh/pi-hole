@@ -135,7 +135,7 @@ download() {
 #   0 if available, 1 if not
 #######################################
 isAvailable() {
-    if [[ "$PKG_MANAGER" == *"apt-get"* ]]; then
+    if [[ "$PKG_MANAGER" == *"apt"* ]]; then
         # Check if there is a candidate and it is not "(none)"
         apt-cache policy "$1" | grep -q "Candidate:" && ! apt-cache policy "$1" | grep -q "Candidate: (none)" && return 0 || return 1
     elif [[ "$PKG_MANAGER" == *"dnf"* || "$PKG_MANAGER" == *"yum"* ]]; then
@@ -156,7 +156,7 @@ isAvailable() {
 #   0 if the package is not installed, 1 if it is
 #######################################
 notInstalled() {
-    if [[ "$PKG_MANAGER" == *"apt-get"* ]]; then
+    if [[ "$PKG_MANAGER" == *"apt"* ]]; then
         dpkg -s "$1" &>/dev/null || return 0
     elif [[ "$PKG_MANAGER" == *"dnf"* || "$PKG_MANAGER" == *"yum"* ]]; then
         rpm -q "$1" &>/dev/null || return 0
@@ -215,7 +215,7 @@ getCnf() {
 #   0 if the installation was successful, 1 if it was not
 #######################################
 libreSpeed() {
-    echo "Installing LibreSpeed..."
+    echo "Installing librespeed-cli..."
     $PKG_MANAGER remove -y speedtest-cli speedtest >/dev/null 2>&1
 
     if notInstalled golang; then
@@ -224,12 +224,14 @@ libreSpeed() {
                 echo "Adding testing repo to sources.list.d"
                 echo "deb http://archive.raspbian.org/raspbian/ testing main" >/etc/apt/sources.list.d/testing.list
                 printf "Package: *\nPin: release a=testing\nPin-Priority: 50" >/etc/apt/preferences.d/limit-testing
-                $PKG_MANAGER update -y
+                $PKG_MANAGER update -y &>/dev/null
             fi
 
-            $PKG_MANAGER install -y -t testing golang
+            isAvailable golang || $PKG_MANAGER update -y &>/dev/null
+            $PKG_MANAGER install -y -t testing golang >/dev/null 2>&1
         else
-            $PKG_MANAGER install -y golang
+            [[ $PKG_MANAGER == *"apt"* ]] && ! isAvailable golang && $PKG_MANAGER update -y &>/dev/null || :
+            $PKG_MANAGER install -y golang >/dev/null 2>&1
         fi
     fi
 
@@ -243,7 +245,7 @@ libreSpeed() {
     chmod +x /usr/bin/speedtest
 
     if [[ -x /usr/bin/speedtest ]]; then
-        echo "Installed LibreSpeed."
+        echo "Installed librespeed-cli"
         return 0
     fi
 
@@ -275,9 +277,11 @@ swivelSpeed() {
     /usr/bin/yum) "$PKG_MANAGER" install -y --allowerasing "$candidate" &>/dev/null ;;
     esac
 
-    if ! notInstalled "$candidate"; then
+    if ! notInstalled "$candidate" && [[ -x /usr/bin/speedtest ]]; then
         printf "Installed "
-        /usr/bin/speedtest --version || return 1
+        local version=
+        version=$(/usr/bin/speedtest --version) || return 1
+        echo "${version%%$'\n'*}"
         return 0
     fi
 
@@ -298,7 +302,7 @@ ooklaSpeed() {
     if [[ "$PKG_MANAGER" == *"yum"* || "$PKG_MANAGER" == *"dnf"* && ! -f /etc/yum.repos.d/ookla_speedtest-cli.repo ]]; then
         echo "Adding speedtest source for RPM..."
         curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.rpm.sh | sudo bash
-    elif [[ "$PKG_MANAGER" == *"apt-get"* && ! -f /etc/apt/sources.list.d/ookla_speedtest-cli.list ]]; then
+    elif [[ "$PKG_MANAGER" == *"apt"* && ! -f /etc/apt/sources.list.d/ookla_speedtest-cli.list ]]; then
         echo "Adding speedtest source for DEB..."
         if [[ -e /etc/os-release ]]; then
             # shellcheck disable=SC1091
@@ -315,10 +319,10 @@ ooklaSpeed() {
             fi
             wget -O /tmp/script.deb.sh https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh >/dev/null 2>&1
             chmod +x /tmp/script.deb.sh
-            os=$os dist=$dist /tmp/script.deb.sh
+            os=$os dist=$dist /tmp/script.deb.sh >/dev/null 2>&1
             rm -f /tmp/script.deb.sh
         else
-            curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
+            curl -sSLN https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash >/dev/null 2>&1
         fi
 
         sed -i 's/g]/g allow-insecure=yes trusted=yes]/' /etc/apt/sources.list.d/ookla_speedtest-cli.list
@@ -405,7 +409,7 @@ ExecStart=/usr/local/bin/pihole -a -sn
 [Install]
 WantedBy=multi-user.target
 EOF'
-        sudo bash -c 'cat > /etc/systemd/system/pihole-speedtest.timer << EOF
+    sudo bash -c 'cat > /etc/systemd/system/pihole-speedtest.timer << EOF
 [Unit]
 Description=Pi-hole Speedtest Timer
 

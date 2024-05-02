@@ -53,14 +53,9 @@ Options:
   -h, --help                      Show this help dialog
   -i, interface                   Specify dnsmasq's interface listening behavior
   -s, speedtest                   Set speedtest interval, add 0 to disable
-  -in                             (Re)install Latest Speedtest Mod and only Mod
-  -up [un] [db]                   (Re)install Latest Pi-hole and (uninstall) the Mod (and flush/restore the database)
-  -un [db]                        Uninstall Speedtest Mod without updating Pi-hole (and delete/restore the database)
-  -db                             Flush or restore the Speedtest Mod database
   -sd                             Set speedtest display range
-  -sn                             Run speedtest now
-  -sm		                      Speedtest Mode (deprecated)
-  -sc                             Clear speedtest data
+  -sm [options]                   Run the Mod Script in the background (tmux a -t pimod)
+  -sn [options]                   Run the Test Script in the background (tmux a -t pimodtest)
   -ss                             Set custom server
   -st                             Set default speedtest chart type (line, bar)
   -l, privacylevel                Set privacy level (0 = lowest, 3 = highest)
@@ -591,8 +586,24 @@ SpeedtestServer() {
     addOrEditKeyValPair "${setupVars}" "SPEEDTEST_SERVER" "$test_server"
 }
 
-RunSpeedtestNow() {
+RunSpeedtestMod() {
     # if there is a running session, wait for it to finish
+    while [[ $(tmux list-sessions 2>/dev/null | grep -c pimod) -gt 0 ]]; do
+        sleep 1
+        ((counter++))
+
+        if [[ $counter -gt 300 ]]; then
+            tmux kill-session -t pimod
+            break
+        fi
+    done
+
+    # discard indexes 0 and 1 from args
+    args=("${args[@]:2}")
+    tmux new-session -d -s pimod "sudo bash $speedtestmod ${args[*]}"
+}
+
+RunSpeedtestNow() {
     # if the session is still running after 5 minutes, kill it
     while [[ $(tmux list-sessions 2>/dev/null | grep -c pimodtest) -gt 0 ]]; do
         sleep 1
@@ -604,23 +615,9 @@ RunSpeedtestNow() {
         fi
     done
 
-    tmux new-session -d -s pimodtest "sudo bash $speedtestfile"
-}
-
-ReinstallSpeedTest() {
-    tmux new-session -d -s pimod "sudo bash $speedtestmod"
-}
-
-UpdateSpeedTest() {
-    tmux new-session -d -s pimod "sudo bash $speedtestmod up ${args[2]} ${args[3]}"
-}
-
-UninstallSpeedTest() {
-    tmux new-session -d -s pimod "sudo bash $speedtestmod un ${args[2]}"
-}
-
-ClearSpeedtestData() {
-    tmux new-session -d -s pimod "sudo bash $speedtestmod db"
+    # discard indexes 0 and 1 from args
+    args=("${args[@]:2}")
+    tmux new-session -d -s pimodtest "sudo bash $speedtestfile ${args[*]}"
 }
 
 SetWebUITheme() {
@@ -966,13 +963,9 @@ main() {
         "clearaudit"          ) clearAudit;;
         "-l" | "privacylevel" ) SetPrivacyLevel;;
         "-s" | "speedtest"    ) ChangeSpeedTestSchedule;;
-        "-in"                 ) ReinstallSpeedTest;;
-        "-up"                 ) UpdateSpeedTest;;
-        "-un"                 ) UninstallSpeedTest;;
-        "-db"                 ) ClearSpeedtestData;;
         "-sd"                 ) UpdateSpeedTestRange;;
-        "-sn"                 ) RunSpeedtestNow;;
-        "-sc"                 ) ClearSpeedtestData;;
+        "-sm"                 ) RunSpeedtestMod ;;
+        "-sn"                 ) RunSpeedtestNow ;;
         "-ss"                 ) SpeedtestServer;;
         "-st"                 ) UpdateSpeedTestChartType;;
         "addcustomdns"        ) AddCustomDNSAddress;;
